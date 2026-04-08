@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  /* CAT-inspired color palette */
+  --color-cat-yellow: #FFCD11;
+  --color-cat-yellow-hover: #e6b800;
+  --color-black: #1A1A1A;
+  --color-black-soft: #222222;
+  --color-black-card: #2C2C2C;
+  --color-border: #3A3A3A;
+  --color-text: #E8E8E8;
+  --color-text-dim: #F0F0F0;
+  --color-muted: #888888;
+  --color-svc-green: #2E7D32;
+  --color-svc-red: #C62828;
+
+  /* Typography */
+  --font-display: 'Barlow Condensed', sans-serif;
+  --font-body: 'Barlow', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* Base styles */
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-black);
+  color: var(--color-text);
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-black);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
