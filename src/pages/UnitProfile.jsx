@@ -197,29 +197,51 @@ export default function UnitProfile() {
       )}
       {(activeWOs.length > 0 || completedWOs.length > 0) && <div className="mb-6" />}
 
-      {/* Service intervals panel */}
-      <SectionHeader title="Service Intervals" />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        {intervals.map((i) => {
-          const closing = i.hoursRemaining <= 75
-          return (
-            <div
-              key={i.interval}
-              className={`bg-black-card border rounded-lg p-4 ${closing ? 'border-svc-green/50' : 'border-border'}`}
-            >
-              <p className="font-display text-xs uppercase tracking-wider text-muted">
-                {i.label}
-              </p>
-              <p className="font-display text-2xl font-bold text-text mt-1">
-                {i.nextAt.toLocaleString()}
-              </p>
-              <p className="text-xs text-muted mt-0.5">
-                {i.hoursRemaining.toLocaleString()} hrs remaining
-              </p>
+      {/* Next service interval — shows the highest interval that applies */}
+      <SectionHeader title="Next Service" />
+      {(() => {
+        // Find the next 250-hour mark and determine which interval it falls on
+        // e.g. at 7997 hrs → next mark is 8000 → that's a 2000HR service (not just 250)
+        const nextMark = intervals[0] // 250HR interval has the nearest nextAt
+        // Check which is the highest interval that shares that same nextAt
+        const highest = [...intervals].reverse().find((i) => i.nextAt === nextMark.nextAt) || nextMark
+        const closing = highest.hoursRemaining <= 75
+        return (
+          <div className={`bg-black-card border rounded-lg p-5 mb-6 ${closing ? 'border-svc-green/50' : 'border-border'}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-display text-sm uppercase tracking-wider text-muted">
+                  Next Service Due
+                </p>
+                <p className="font-display text-3xl font-bold text-cat-yellow mt-1">
+                  {highest.label}
+                </p>
+                <p className="text-sm text-text-dim mt-1">
+                  at <span className="font-mono">{highest.nextAt.toLocaleString()}</span> hours
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs uppercase tracking-wider text-muted font-display">
+                  Hours Remaining
+                </p>
+                <p className={`font-display text-4xl font-bold mt-1 ${closing ? 'text-svc-red' : 'text-text'}`}>
+                  {highest.hoursRemaining.toLocaleString()}
+                </p>
+              </div>
             </div>
-          )
-        })}
-      </div>
+            {/* Show all intervals as a compact reference row below */}
+            <div className="mt-4 pt-3 border-t border-border flex gap-4">
+              {intervals.map((i) => (
+                <div key={i.interval} className="text-xs text-muted">
+                  <span className="font-display uppercase tracking-wider">{i.label}</span>{' '}
+                  <span className="font-mono text-text-dim">@ {i.nextAt.toLocaleString()}</span>{' '}
+                  <span className="text-muted">({i.hoursRemaining} hrs)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Notes */}
       <SectionHeader title="Notes" />
