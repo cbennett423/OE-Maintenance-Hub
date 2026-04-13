@@ -4,7 +4,12 @@ import { ArrowLeft, Pencil, AlertTriangle, Wrench, ClipboardList } from 'lucide-
 import PageHeader from '../components/layout/PageHeader'
 import ServiceBadge from '../components/equipment/ServiceBadge'
 import EditUnitModal from '../components/equipment/EditUnitModal'
+import CreateWOModal from '../components/workorders/CreateWOModal'
+import WOStatusBadge from '../components/workorders/WOStatusBadge'
+import PriorityBadge from '../components/workorders/PriorityBadge'
+import WODetailModal from '../components/workorders/WODetailModal'
 import { useEquipment } from '../hooks/useEquipment'
+import { useWorkOrders } from '../hooks/useWorkOrders'
 import { useUnitAuditLog } from '../hooks/useAuditLog'
 import { forecastIntervals } from '../lib/serviceLogic'
 
@@ -13,6 +18,8 @@ export default function UnitProfile() {
   const navigate = useNavigate()
   const { equipment, loading, updateUnit } = useEquipment()
   const [editOpen, setEditOpen] = useState(false)
+  const [createWOOpen, setCreateWOOpen] = useState(false)
+  const [selectedWO, setSelectedWO] = useState(null)
 
   const unit = useMemo(
     () => equipment.find((u) => u.id === id),
@@ -24,6 +31,19 @@ export default function UnitProfile() {
     equipment.forEach((u) => u.site && set.add(u.site))
     return Array.from(set).sort()
   }, [equipment])
+
+  const { workOrders, createWO, updateWO } = useWorkOrders({
+    equipmentId: id,
+  })
+
+  const activeWOs = useMemo(
+    () => workOrders.filter((wo) => wo.status !== 'completed'),
+    [workOrders]
+  )
+  const completedWOs = useMemo(
+    () => workOrders.filter((wo) => wo.status === 'completed'),
+    [workOrders]
+  )
 
   const { entries: auditEntries, loading: auditLoading } = useUnitAuditLog(
     unit?.label
@@ -102,7 +122,7 @@ export default function UnitProfile() {
             <Pencil size={13} /> Edit Unit
           </button>
           <button
-            onClick={() => alert('Work orders coming in Phase 3')}
+            onClick={() => setCreateWOOpen(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-semibold uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
           >
             <Wrench size={13} /> New Work Order
@@ -115,6 +135,67 @@ export default function UnitProfile() {
           </button>
         </div>
       </div>
+
+      {/* Work Orders */}
+      <SectionHeader title="Work Orders" />
+      {activeWOs.length === 0 && completedWOs.length === 0 && (
+        <div className="bg-black-card border border-border rounded-lg p-4 mb-6">
+          <p className="text-muted text-sm italic">No work orders for this unit.</p>
+        </div>
+      )}
+      {activeWOs.length > 0 && (
+        <div className="bg-black-card border border-border rounded-lg overflow-hidden mb-3">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left border-b border-border bg-black-soft">
+                <th className="px-4 py-2 font-display font-semibold uppercase tracking-wider text-muted text-[11px]">Description</th>
+                <th className="px-4 py-2 font-display font-semibold uppercase tracking-wider text-muted text-[11px]">Priority</th>
+                <th className="px-4 py-2 font-display font-semibold uppercase tracking-wider text-muted text-[11px]">Status</th>
+                <th className="px-4 py-2 font-display font-semibold uppercase tracking-wider text-muted text-[11px]">Mechanic</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeWOs.map((wo) => (
+                <tr
+                  key={wo.id}
+                  onClick={() => setSelectedWO(wo)}
+                  className="border-b border-border last:border-b-0 cursor-pointer hover:bg-cat-yellow/5 transition-colors"
+                >
+                  <td className="px-4 py-2 text-text-dim max-w-xs truncate">{wo.description}</td>
+                  <td className="px-4 py-2"><PriorityBadge priority={wo.priority} /></td>
+                  <td className="px-4 py-2"><WOStatusBadge status={wo.status} /></td>
+                  <td className="px-4 py-2 text-muted text-xs">{wo.assigned_mechanic || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {completedWOs.length > 0 && (
+        <details className="mb-6">
+          <summary className="text-xs text-muted cursor-pointer hover:text-text transition-colors mb-2">
+            {completedWOs.length} completed work order{completedWOs.length !== 1 ? 's' : ''}
+          </summary>
+          <div className="bg-black-card border border-border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <tbody>
+                {completedWOs.map((wo) => (
+                  <tr
+                    key={wo.id}
+                    onClick={() => setSelectedWO(wo)}
+                    className="border-b border-border last:border-b-0 cursor-pointer hover:bg-cat-yellow/5 transition-colors"
+                  >
+                    <td className="px-4 py-2 text-muted max-w-xs truncate">{wo.description}</td>
+                    <td className="px-4 py-2"><WOStatusBadge status="completed" /></td>
+                    <td className="px-4 py-2 text-muted text-xs">{wo.date_completed || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+      {(activeWOs.length > 0 || completedWOs.length > 0) && <div className="mb-6" />}
 
       {/* Service intervals panel */}
       <SectionHeader title="Service Intervals" />
@@ -191,6 +272,19 @@ export default function UnitProfile() {
         isOpen={editOpen}
         onClose={() => setEditOpen(false)}
         onSave={updateUnit}
+      />
+      <CreateWOModal
+        isOpen={createWOOpen}
+        onClose={() => setCreateWOOpen(false)}
+        onSave={createWO}
+        equipment={equipment}
+        preselectedUnit={unit}
+      />
+      <WODetailModal
+        workOrder={selectedWO}
+        isOpen={!!selectedWO}
+        onClose={() => setSelectedWO(null)}
+        onUpdate={updateWO}
       />
     </div>
   )
