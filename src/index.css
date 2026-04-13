@@ -50,3 +50,24 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-muted);
 }
+
+/* Shared dark input styling */
+.input-dark {
+  padding: 0.5rem 0.75rem;
+  background-color: var(--color-black-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+}
+
+.input-dark:focus {
+  outline: none;
+  border-color: var(--color-cat-yellow);
+}
+
+.input-dark::placeholder {
+  color: var(--color-muted);
+  opacity: 0.5;
+}
