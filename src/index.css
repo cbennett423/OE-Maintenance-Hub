@@ -20,7 +20,11 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Base styles */
+/* Base styles — bumped from browser default 16px to 18px for readability */
+html {
+  font-size: 18px;
+}
+
 body {
   font-family: var(--font-body);
   background-color: var(--color-black);
