@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FileText, Upload, ClipboardCopy, Check, X, File, RefreshCw } from 'lucide-react'
+import { FileText, Upload, ClipboardCopy, Check, X, File, RefreshCw, Download } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import { supabase } from '../lib/supabase'
+import { useEquipment } from '../hooks/useEquipment'
+import { useRentals } from '../hooks/useRentals'
+import { generateFleetReport } from '../lib/generateFleetReport'
 
 const BUCKET = 'telematics-uploads'
 
@@ -32,8 +35,23 @@ const REPORTS = [
 ]
 
 export default function Reports() {
+  const { equipment } = useEquipment()
+  const { rentals } = useRentals()
+  const [generating, setGenerating] = useState(false)
   const [uploads, setUploads] = useState({}) // key -> { name, uploading, error, path, uploadedAt }
   const [existingFiles, setExistingFiles] = useState({}) // key -> [{ name, created_at }]
+
+  function handleGenerateFleetReport() {
+    setGenerating(true)
+    try {
+      generateFleetReport(equipment, rentals)
+    } catch (err) {
+      console.error('PDF generation failed', err)
+      alert('Failed to generate report: ' + err.message)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   // Load existing files from storage on mount
   const loadExisting = useCallback(async () => {
@@ -82,14 +100,39 @@ export default function Reports() {
     <div>
       <PageHeader title="Reports" />
 
-      <div className="bg-black-card border border-border border-t-4 border-t-cat-yellow rounded-lg p-5 mb-6">
-        <p className="text-text-dim text-sm">
-          Upload your weekly telematics exports below, then run the Python scripts in Claude.ai to generate PDF reports. Scripts pull live equipment/truck/rental data from Supabase automatically.
-        </p>
+      {/* Generate reports from live data */}
+      <SectionHeader title="Generate Reports" />
+      <div className="grid gap-4 mb-6">
+        <div className="bg-black-card border border-border rounded-lg p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <FileText size={20} className="text-cat-yellow mt-0.5 shrink-0" />
+              <div>
+                <h3 className="font-display text-base font-bold uppercase tracking-wider text-text">
+                  Weekly Fleet Report
+                </h3>
+                <p className="text-sm text-muted mt-1">
+                  Full fleet report by site with equipment, hours, service status, notes, and rental equipment. Generated from live Supabase data.
+                </p>
+                <p className="text-xs text-muted mt-2">
+                  {equipment.length} equipment units · {rentals.filter(r => !r.date_returned).length} active rentals
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleGenerateFleetReport}
+              disabled={generating || equipment.length === 0}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors disabled:opacity-50 shrink-0"
+            >
+              <Download size={15} />
+              {generating ? 'Generating…' : 'Generate PDF'}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Upload section */}
-      <SectionHeader title="Upload Telematics Files" />
+      {/* Upload section (for future VisionLink/Samsara import) */}
+      <SectionHeader title="Upload Telematics Files (Optional)" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {UPLOAD_SLOTS.map((slot) => (
           <UploadCard
@@ -102,10 +145,15 @@ export default function Reports() {
         ))}
       </div>
 
-      {/* Reports */}
-      <SectionHeader title="Generate Reports" />
+      {/* Legacy Python scripts reference */}
+      <SectionHeader title="Python Scripts (Legacy)" />
+      <div className="bg-black-card border border-border rounded-lg p-4 mb-4">
+        <p className="text-xs text-muted">
+          The Python scripts below are still available in Claude.ai for advanced reports (service due, changelog). The fleet report above replaces fleet_report.py.
+        </p>
+      </div>
       <div className="grid gap-4">
-        {REPORTS.map((r) => (
+        {REPORTS.filter(r => r.script !== 'fleet_report.py').map((r) => (
           <ReportCard key={r.script} report={r} uploads={uploads} existingFiles={existingFiles} />
         ))}
       </div>
