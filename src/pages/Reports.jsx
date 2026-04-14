@@ -28,7 +28,7 @@ export default function Reports() {
   async function handleGenerateFleetReport() {
     setGenerating(true)
     try {
-      generateFleetReport(equipment, rentals, { jobs })
+      await generateFleetReport(equipment, rentals, { jobs })
       await writeAuditLog({
         unitLabel: 'SYSTEM',
         changeType: 'report_generated',

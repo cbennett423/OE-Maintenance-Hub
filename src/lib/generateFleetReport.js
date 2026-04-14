@@ -2,6 +2,27 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { computeServiceStatus, formatKitDate } from './serviceLogic'
 
+/**
+ * Fetch /oe-logo.png from the public folder and convert it to a data URL
+ * suitable for jsPDF's addImage. Returns null if the file isn't present
+ * so the PDF still generates gracefully without the logo.
+ */
+async function loadLogoDataUrl() {
+  try {
+    const res = await fetch('/oe-logo.png')
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
 // Site order from handoff doc — FT Lupton and OE Shop are pinned last
 // via siteRank(), not listed here.
 const SITE_ORDER = [
@@ -39,7 +60,9 @@ const GREEN = [46, 125, 50]
  * Generate the full fleet report PDF matching the OE Construction Corp format.
  * Returns the jsPDF doc or triggers download.
  */
-export function generateFleetReport(equipment, rentals, options = {}) {
+export async function generateFleetReport(equipment, rentals, options = {}) {
+  const logoDataUrl = await loadLogoDataUrl()
+
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
@@ -57,7 +80,7 @@ export function generateFleetReport(equipment, rentals, options = {}) {
 
   // ── Page 1 & 2: Equipment Report ──────────────────────────
 
-  drawHeader(doc, pageWidth, margin, dateStr, 'Equipment & Services Report')
+  drawHeader(doc, pageWidth, margin, dateStr, 'Equipment & Services Report', logoDataUrl)
 
   // Group equipment by NORMALIZED site so case/whitespace differences
   // don't split the same site into two sections.
@@ -80,7 +103,7 @@ export function generateFleetReport(equipment, rentals, options = {}) {
     if (startY > pageHeight - 40) {
       drawFooter(doc, pageWidth, pageHeight, margin)
       doc.addPage()
-      drawHeader(doc, pageWidth, margin, dateStr, 'Equipment & Services Report')
+      drawHeader(doc, pageWidth, margin, dateStr, 'Equipment & Services Report', logoDataUrl)
       startY = 52
     }
 
@@ -193,7 +216,7 @@ export function generateFleetReport(equipment, rentals, options = {}) {
 
   if (rentals && rentals.length > 0) {
     doc.addPage()
-    drawHeader(doc, pageWidth, margin, dateStr, 'Rental Equipment')
+    drawHeader(doc, pageWidth, margin, dateStr, 'Rental Equipment', logoDataUrl)
 
     // Section header
     let ry = 52
@@ -273,12 +296,22 @@ export function generateFleetReport(equipment, rentals, options = {}) {
 
 // ── Helpers ──────────────────────────────────────────────────
 
-function drawHeader(doc, pageWidth, margin, dateStr, subtitle) {
-  // Title
+function drawHeader(doc, pageWidth, margin, dateStr, subtitle, logoDataUrl) {
+  // Logo on the left side of the header
+  if (logoDataUrl) {
+    try {
+      doc.addImage(logoDataUrl, 'PNG', margin, 8, 18, 18)
+    } catch (err) {
+      console.warn('Logo render failed:', err)
+    }
+  }
+
+  // Title — shift right if logo is present
+  const titleX = logoDataUrl ? margin + 22 : margin + 2
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(20)
   doc.setTextColor(...BLACK)
-  doc.text('OE Construction Corp', margin + 2, 22)
+  doc.text('OE Construction Corp', titleX, 22)
 
   // Subtitle + date (right-aligned)
   doc.setFont('helvetica', 'normal')
