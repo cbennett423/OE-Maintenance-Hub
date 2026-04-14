@@ -115,7 +115,31 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
       }
     }
 
-    // Non-"Done" text override (e.g. "Oil change", "CHECK SERVICE")
+    // Plain interval override (e.g. "500HR", "1000HR") — use the override
+    // as the forced interval label but still honor kit/order-kit behavior
+    // based on the kit_ordered flag.
+    const intervalOnlyMatch = text.match(/^(\d+)HR$/i)
+    if (intervalOnlyMatch) {
+      const forcedLabel = `${intervalOnlyMatch[1]}HR`
+      if (unit.kit_ordered === true) {
+        return {
+          status: 'kit',
+          intervalLabel: forcedLabel,
+          hoursToNext,
+          primary: forcedLabel,
+          secondary: '',
+        }
+      }
+      return {
+        status: 'due',
+        intervalLabel: forcedLabel,
+        hoursToNext,
+        primary: forcedLabel,
+        secondary: 'order kit',
+      }
+    }
+
+    // Custom text override (e.g. "Oil change", "CHECK SERVICE")
     return {
       status: 'override',
       intervalLabel: text,
