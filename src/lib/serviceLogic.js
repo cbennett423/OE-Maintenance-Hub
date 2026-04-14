@@ -220,7 +220,7 @@ export function forecastIntervals(hours) {
   })
 }
 
-function formatKitDate(iso) {
+export function formatKitDate(iso) {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''

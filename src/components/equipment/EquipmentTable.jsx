@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import ServiceBadge from './ServiceBadge'
+import { formatKitDate } from '../../lib/serviceLogic'
 
 export default function EquipmentTable({ equipment, onRowClick, onViewProfile }) {
   if (!equipment || equipment.length === 0) {
@@ -21,6 +22,7 @@ export default function EquipmentTable({ equipment, onRowClick, onViewProfile })
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Site</th>
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs text-right">Hours</th>
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Service</th>
+              <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Kit Ordered</th>
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Notes</th>
             </tr>
           </thead>
@@ -33,7 +35,7 @@ export default function EquipmentTable({ equipment, onRowClick, onViewProfile })
               <>
               {showDivider && (
                 <tr key={`site-${normSite}-${i}`} className="bg-black border-b border-border">
-                  <td colSpan={6} className="px-4 py-2">
+                  <td colSpan={7} className="px-4 py-2">
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-5 bg-cat-yellow rounded-sm" />
                       <span className="font-display text-xs font-bold uppercase tracking-widest text-cat-yellow">
@@ -79,6 +81,9 @@ export default function EquipmentTable({ equipment, onRowClick, onViewProfile })
                 </td>
                 <td className="px-4 py-2.5">
                   <ServiceBadge unit={unit} size="sm" />
+                </td>
+                <td className="px-4 py-2.5 font-mono text-xs text-muted whitespace-nowrap">
+                  {formatKitDate(unit.kit_ordered_date)}
                 </td>
                 <td className="px-4 py-2.5 text-muted text-xs max-w-xs truncate">
                   {unit.notes || ''}
