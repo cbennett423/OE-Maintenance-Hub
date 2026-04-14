@@ -43,6 +43,8 @@ export default function Reports() {
     }
   }
 
+  const [parseMeta, setParseMeta] = useState(null)
+
   async function handleVisionLinkImport(file) {
     setImportError(null)
     try {
@@ -54,6 +56,12 @@ export default function Reports() {
       const matches = matchVisionLinkToEquipment(parsed.rows, equipment)
       setImportType('visionlink')
       setImportMatches(matches)
+      setParseMeta({
+        serialCol: parsed.serialCol,
+        hoursCol: parsed.hoursCol,
+        geofenceCol: parsed.geofenceCol,
+        totalRows: parsed.rows.length,
+      })
     } catch (err) {
       setImportError('Failed to parse file: ' + err.message)
     }
@@ -143,8 +151,9 @@ export default function Reports() {
           <ImportPreview
             matches={importMatches}
             type={importType}
+            parseMeta={parseMeta}
             onApply={importType === 'visionlink' ? applyVisionLinkUpdates : applySamsaraUpdates}
-            onCancel={() => { setImportMatches(null); setImportType(null) }}
+            onCancel={() => { setImportMatches(null); setImportType(null); setParseMeta(null) }}
           />
         </div>
       )}

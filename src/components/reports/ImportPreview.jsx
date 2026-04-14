@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Upload, Check, AlertTriangle, ArrowRight } from 'lucide-react'
 
-export default function ImportPreview({ matches, type, onApply, onCancel }) {
+export default function ImportPreview({ matches, type, parseMeta, onApply, onCancel }) {
   const [applying, setApplying] = useState(false)
   const [result, setResult] = useState(null)
 
@@ -10,6 +10,9 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
   const changed = matched.filter((m) => m.changed && !m.skip)
   const skipped = matched.filter((m) => m.skip)
   const unchanged = matched.filter((m) => !m.changed && !m.skip)
+
+  const hoursChangedCount = changed.filter((m) => m.hoursChanged).length
+  const siteChangedCount = changed.filter((m) => m.siteChanged).length
 
   // Checkboxes: all changed items start checked
   const [selected, setSelected] = useState(() => {
@@ -77,11 +80,32 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
 
   return (
     <div className="bg-black-card border border-border rounded-lg overflow-hidden">
+      {/* Column detection info */}
+      {parseMeta && (
+        <div className="px-5 py-2 border-b border-border bg-black text-[11px] text-muted flex flex-wrap gap-4">
+          <span>Detected columns:</span>
+          <span>Serial: <span className="text-text-dim font-mono">{parseMeta.serialCol || '—'}</span></span>
+          <span>Hours: <span className="text-text-dim font-mono">{parseMeta.hoursCol || '—'}</span></span>
+          <span>
+            Geofence:{' '}
+            <span className={`font-mono ${parseMeta.geofenceCol ? 'text-text-dim' : 'text-svc-red'}`}>
+              {parseMeta.geofenceCol || 'NOT FOUND — site changes won\u2019t appear'}
+            </span>
+          </span>
+        </div>
+      )}
+
       {/* Summary bar */}
       <div className="px-5 py-3 border-b border-border bg-black-soft flex items-center justify-between">
         <div className="flex items-center gap-4 text-xs">
           <span className="text-svc-green font-display font-semibold uppercase tracking-wider">
             {selectedCount} of {changed.length} selected
+          </span>
+          <span className="text-muted">
+            {hoursChangedCount} hour {hoursChangedCount === 1 ? 'change' : 'changes'}
+          </span>
+          <span className="text-muted">
+            {siteChangedCount} site {siteChangedCount === 1 ? 'change' : 'changes'}
           </span>
           <span className="text-muted">
             {unchanged.length} unchanged

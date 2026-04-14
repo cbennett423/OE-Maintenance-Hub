@@ -20,10 +20,23 @@ export function parseVisionLinkExport(file) {
 
         const headers = Object.keys(rows[0])
 
-        // Auto-detect columns
-        const serialCol = findColumn(headers, ['serial', 'serial number', 'serialnumber', 'asset serial', 'equipment serial'])
-        const hoursCol = findColumn(headers, ['hours', 'hour meter', 'hourmeter', 'hour reading', 'engine hours', 'smu', 'cumulative hours'])
-        const geofenceCol = findColumn(headers, ['geofence', 'geo fence', 'location', 'site', 'current geofence'])
+        // Auto-detect columns — try many common VisionLink export variants
+        const serialCol = findColumn(headers, [
+          'serial number', 'serialnumber', 'asset serial', 'equipment serial',
+          'serial', 'sn', 's/n', 'machine serial',
+        ])
+        const hoursCol = findColumn(headers, [
+          'hour meter', 'hourmeter', 'hour reading', 'engine hours',
+          'cumulative hours', 'machine hours', 'runtime hours',
+          'hours', 'smu',
+        ])
+        const geofenceCol = findColumn(headers, [
+          'last reported geofence name', 'last known geofence name',
+          'last reported geofence', 'last known geofence', 'current geofence',
+          'asset geofence', 'geofence name', 'geofence',
+          'geo fence', 'location', 'last known location',
+          'site',
+        ])
 
         // Parse rows into standardized format
         const parsed = rows
