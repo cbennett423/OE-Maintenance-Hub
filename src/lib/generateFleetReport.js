@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { computeServiceStatus } from './serviceLogic'
+import { computeServiceStatus, formatKitDate } from './serviceLogic'
 
 // Site order from handoff doc — FT Lupton and OE Shop are pinned last
 // via siteRank(), not listed here.
@@ -110,6 +110,7 @@ export function generateFleetReport(equipment, rentals, options = {}) {
         u.label || '',
         u.hours != null ? Number(u.hours).toLocaleString() : '—',
         svcText,
+        formatKitDate(u.kit_ordered_date),
         u.notes || '',
       ]
     })
@@ -117,7 +118,7 @@ export function generateFleetReport(equipment, rentals, options = {}) {
     autoTable(doc, {
       startY,
       margin: { left: margin, right: margin },
-      head: [['EQUIPMENT', 'HOURS', 'SERVICE', 'NOTES / SERVICE INFO']],
+      head: [['EQUIPMENT', 'HOURS', 'SERVICE', 'KIT ORDERED', 'NOTES / SERVICE INFO']],
       body: tableData,
       theme: 'plain',
       styles: {
@@ -134,10 +135,11 @@ export function generateFleetReport(equipment, rentals, options = {}) {
         fillColor: false,
       },
       columnStyles: {
-        0: { cellWidth: 45, fontStyle: 'bold' },
-        1: { cellWidth: 22, halign: 'center' },
-        2: { cellWidth: 28, halign: 'center', fontSize: 7 },
-        3: { cellWidth: 'auto', fontSize: 7.5 },
+        0: { cellWidth: 42, fontStyle: 'bold' },
+        1: { cellWidth: 20, halign: 'center' },
+        2: { cellWidth: 26, halign: 'center', fontSize: 7 },
+        3: { cellWidth: 18, halign: 'center', fontSize: 7 },
+        4: { cellWidth: 'auto', fontSize: 7.5 },
       },
       alternateRowStyles: {
         fillColor: ROW_GRAY,
