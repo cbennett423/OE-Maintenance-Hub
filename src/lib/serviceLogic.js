@@ -49,33 +49,44 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
 
   const hours = Number(unit.hours) || 0
 
-  // 1. Manual text override
-  if (unit.svc_override && String(unit.svc_override).trim() !== '') {
-    const text = String(unit.svc_override).trim()
-    // "XXXHR Done" pattern means completed service — render as gray done badge
-    const doneMatch = text.match(/^(\d+HR)\s+Done\b/i)
-    if (doneMatch) {
-      return {
-        status: 'done',
-        intervalLabel: doneMatch[1].toUpperCase(),
-        hoursToNext: null,
-        primary: doneMatch[1].toUpperCase(),
-        secondary: '',
-      }
-    }
-    return {
-      status: 'override',
-      intervalLabel: text,
-      hoursToNext: null,
-      primary: text,
-      secondary: '',
-    }
-  }
-
-  // Compute next interval
+  // Compute next interval up front so "Done" overrides can yield to it
   const nextMark = nextIntervalMark(hours)
   const hoursToNext = nextMark - hours
   const label = intervalLabelFor(nextMark)
+
+  // 1. Manual text override
+  if (unit.svc_override && String(unit.svc_override).trim() !== '') {
+    const text = String(unit.svc_override).trim()
+    const doneMatch = text.match(/^(\d+HR)\s+Done\b/i)
+
+    if (doneMatch) {
+      // "XXXHR Done" — only show the gray Done badge while the unit is
+      // in the quiet window between services. If hours have crossed the
+      // next interval or are within the warning threshold, we let the
+      // normal due/overdue logic below take priority.
+      const isActionable =
+        unit.svc_overdue === true || hoursToNext <= 0 || hoursToNext <= threshold
+      if (!isActionable) {
+        return {
+          status: 'done',
+          intervalLabel: doneMatch[1].toUpperCase(),
+          hoursToNext,
+          primary: doneMatch[1].toUpperCase(),
+          secondary: '',
+        }
+      }
+      // Fall through to due/overdue logic below
+    } else {
+      // Non-"Done" text override (e.g. "Oil change", "CHECK SERVICE")
+      return {
+        status: 'override',
+        intervalLabel: text,
+        hoursToNext: null,
+        primary: text,
+        secondary: '',
+      }
+    }
+  }
 
   // 2. Force-overdue flag
   if (unit.svc_overdue === true) {

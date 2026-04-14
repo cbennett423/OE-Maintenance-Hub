@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { CheckCircle2 } from 'lucide-react'
 import Modal from '../ui/Modal'
+import { computeServiceStatus } from '../../lib/serviceLogic'
 
 const EDITABLE_FIELDS = [
   'hours',
@@ -36,6 +38,37 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
   }
+
+  /**
+   * Mark the current service interval as complete.
+   * Sets svc_override to "XXXHR Done" for whichever interval applies,
+   * and clears the kit/overdue flags.
+   */
+  function markServiceComplete() {
+    const status = computeServiceStatus(unit)
+    // Use whatever interval label is currently active
+    const label = status.intervalLabel || status.primary || ''
+    // Strip to just the "XXXHR" portion (if an interval label was present)
+    const intervalMatch = label.match(/^(\d+HR)/i)
+    const doneText = intervalMatch ? `${intervalMatch[1].toUpperCase()} Done` : 'Service Done'
+    setForm((f) => ({
+      ...f,
+      svc_override: doneText,
+      kit_ordered: false,
+      kit_ordered_date: '',
+      svc_overdue: false,
+    }))
+  }
+
+  function clearServiceComplete() {
+    setForm((f) => ({
+      ...f,
+      svc_override: '',
+    }))
+  }
+
+  const isDoneOverride =
+    form.svc_override && /^\d+HR\s+Done\b/i.test(String(form.svc_override).trim())
 
   async function handleSave() {
     setSaving(true)
@@ -110,7 +143,7 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
           </select>
         </Field>
 
-        <Field label="Service Override" hint="Manual label (e.g. CHECK SERVICE)">
+        <Field label="Service Override" hint="Manual label (e.g. CHECK SERVICE) — also used for ‘XXXHR Done’">
           <input
             type="text"
             value={form.svc_override ?? ''}
@@ -127,6 +160,27 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
             onChange={(e) => update('kit_ordered_date', e.target.value)}
             className="w-full input-dark"
           />
+        </Field>
+
+        <Field label="Service Completion" span={2}>
+          <div className="flex flex-wrap items-center gap-3">
+            <CheckboxField
+              label="Service completed (clear all tags)"
+              checked={isDoneOverride}
+              onChange={(v) => (v ? markServiceComplete() : clearServiceComplete())}
+            />
+            {isDoneOverride && (
+              <span className="inline-flex items-center gap-1 text-xs text-svc-green">
+                <CheckCircle2 size={13} />
+                {form.svc_override}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-muted/70 mt-1.5">
+            Check this when the service has been completed. Sets the tag to
+            &ldquo;XXXHR Done&rdquo; and clears kit/overdue flags. The Done
+            tag hides automatically once hours approach the next service.
+          </p>
         </Field>
 
         <Field label="Flags" span={2}>
