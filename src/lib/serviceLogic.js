@@ -57,34 +57,54 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
   // 1. Manual text override
   if (unit.svc_override && String(unit.svc_override).trim() !== '') {
     const text = String(unit.svc_override).trim()
-    const doneMatch = text.match(/^(\d+HR)\s+Done\b/i)
+    const doneMatch = text.match(/^(\d+)HR\s+Done\b/i)
 
     if (doneMatch) {
-      // "XXXHR Done" — only show the gray Done badge while the unit is
-      // in the quiet window between services. If hours have crossed the
-      // next interval or are within the warning threshold, we let the
-      // normal due/overdue logic below take priority.
-      const isActionable =
-        unit.svc_overdue === true || hoursToNext <= 0 || hoursToNext <= threshold
-      if (!isActionable) {
+      const intervalNum = parseInt(doneMatch[1], 10)
+      const doneLabel = `${intervalNum}HR`
+      if (unit.svc_done_at_hours != null && intervalNum > 0) {
+        // Target mark = next multiple of intervalNum strictly above the
+        // hours at the moment the service was marked complete.
+        const anchor = Number(unit.svc_done_at_hours) || 0
+        const targetMark =
+          Math.floor(anchor / intervalNum) * intervalNum + intervalNum
+        if (hours < targetMark) {
+          return {
+            status: 'done',
+            intervalLabel: doneLabel,
+            hoursToNext: targetMark - hours,
+            primary: doneLabel,
+            secondary: '',
+          }
+        }
+        // Expired — hours have crossed the specific interval that was
+        // marked complete. Show nothing. Do NOT fall through to due/overdue
+        // so the unit doesn't re-trigger as a new service.
         return {
-          status: 'done',
-          intervalLabel: doneMatch[1].toUpperCase(),
+          status: 'none',
+          intervalLabel: label,
           hoursToNext,
-          primary: doneMatch[1].toUpperCase(),
+          primary: '',
           secondary: '',
         }
       }
-      // Fall through to due/overdue logic below
-    } else {
-      // Non-"Done" text override (e.g. "Oil change", "CHECK SERVICE")
+      // Legacy row without svc_done_at_hours → preserve always-show behavior
       return {
-        status: 'override',
-        intervalLabel: text,
+        status: 'done',
+        intervalLabel: doneLabel,
         hoursToNext: null,
-        primary: text,
+        primary: doneLabel,
         secondary: '',
       }
+    }
+
+    // Non-"Done" text override (e.g. "Oil change", "CHECK SERVICE")
+    return {
+      status: 'override',
+      intervalLabel: text,
+      hoursToNext: null,
+      primary: text,
+      secondary: '',
     }
   }
 
@@ -113,13 +133,14 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
   // 4. Due soon (within warning threshold)
   if (hoursToNext <= threshold) {
     if (unit.kit_ordered === true) {
-      const dateLabel = formatKitDate(unit.kit_ordered_date)
+      // Kit ordered: "order kit" tag goes away entirely — only the interval
+      // label remains. Matches the original prototype PDF behavior.
       return {
         status: 'kit',
         intervalLabel: label,
         hoursToNext,
         primary: label,
-        secondary: dateLabel ? `kit ordered ${dateLabel}` : 'kit ordered',
+        secondary: '',
       }
     }
     return {

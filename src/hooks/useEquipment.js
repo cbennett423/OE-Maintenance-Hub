@@ -37,7 +37,43 @@ export function useEquipment() {
 
   const updateUnit = useCallback(
     async (id, changes, original) => {
-      const patch = { ...changes, updated_at: new Date().toISOString() }
+      // Auto-clear expired "XXXHR Done" markers. If the incoming patch
+      // includes new hours that push past the target interval mark (and
+      // the caller didn't already touch svc_override themselves), clear
+      // both svc_override and svc_done_at_hours so the Done tag disappears
+      // cleanly and the unit doesn't get stuck showing a stale completion.
+      let effectiveChanges = changes
+      const newHoursRaw =
+        'hours' in changes ? changes.hours : original?.hours
+      const newHours =
+        newHoursRaw == null || newHoursRaw === '' ? null : Number(newHoursRaw)
+      const overrideUntouched = !('svc_override' in changes)
+      const doneMatch = String(original?.svc_override || '').match(
+        /^(\d+)HR\s+Done\b/i
+      )
+      if (
+        overrideUntouched &&
+        doneMatch &&
+        original?.svc_done_at_hours != null &&
+        newHours != null
+      ) {
+        const intervalNum = parseInt(doneMatch[1], 10)
+        const anchor = Number(original.svc_done_at_hours) || 0
+        const targetMark =
+          Math.floor(anchor / intervalNum) * intervalNum + intervalNum
+        if (newHours >= targetMark) {
+          effectiveChanges = {
+            ...changes,
+            svc_override: null,
+            svc_done_at_hours: null,
+          }
+        }
+      }
+
+      const patch = {
+        ...effectiveChanges,
+        updated_at: new Date().toISOString(),
+      }
 
       const { error: updateError } = await supabase
         .from('equipment')
@@ -51,7 +87,7 @@ export function useEquipment() {
       // Write audit log entries for every actually-changed field
       const entries = diffForAuditLog({
         unitLabel: original?.label ?? id,
-        changes,
+        changes: effectiveChanges,
         original,
         changedBy: user?.email || 'unknown',
       })

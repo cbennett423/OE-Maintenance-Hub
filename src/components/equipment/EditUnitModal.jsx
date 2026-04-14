@@ -8,6 +8,7 @@ const EDITABLE_FIELDS = [
   'site',
   'notes',
   'svc_override',
+  'svc_done_at_hours',
   'kit_ordered',
   'kit_ordered_date',
   'svc_overdue',
@@ -41,19 +42,23 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
 
   /**
    * Mark the current service interval as complete.
-   * Sets svc_override to "XXXHR Done" for whichever interval applies,
-   * and clears the kit/overdue flags.
+   * Sets svc_override to "XXXHR Done" and captures the current hours into
+   * svc_done_at_hours so the Done tag can auto-expire once hours cross
+   * the corresponding interval mark. Also clears kit/overdue flags.
    */
   function markServiceComplete() {
     const status = computeServiceStatus(unit)
-    // Use whatever interval label is currently active
     const label = status.intervalLabel || status.primary || ''
-    // Strip to just the "XXXHR" portion (if an interval label was present)
     const intervalMatch = label.match(/^(\d+HR)/i)
     const doneText = intervalMatch ? `${intervalMatch[1].toUpperCase()} Done` : 'Service Done'
+    // Use the current hours value from the form (which may differ from
+    // unit.hours if Chase edited hours in this session before checking the box)
+    const currentHours =
+      form.hours === '' || form.hours == null ? unit.hours : Number(form.hours)
     setForm((f) => ({
       ...f,
       svc_override: doneText,
+      svc_done_at_hours: currentHours ?? null,
       kit_ordered: false,
       kit_ordered_date: '',
       svc_overdue: false,
@@ -64,6 +69,7 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
     setForm((f) => ({
       ...f,
       svc_override: '',
+      svc_done_at_hours: null,
     }))
   }
 
@@ -79,6 +85,10 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
       site: form.site || null,
       notes: form.notes ?? '',
       svc_override: form.svc_override === '' ? null : form.svc_override,
+      svc_done_at_hours:
+        form.svc_done_at_hours === '' || form.svc_done_at_hours == null
+          ? null
+          : Number(form.svc_done_at_hours),
       kit_ordered: !!form.kit_ordered,
       kit_ordered_date: form.kit_ordered_date || null,
       svc_overdue: !!form.svc_overdue,
