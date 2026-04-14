@@ -6,13 +6,13 @@
      muted text for better readability. */
   --color-cat-yellow: #FFCD11;
   --color-cat-yellow-hover: #e6b800;
-  --color-black: #2A2A2A;        /* page bg (was #1A1A1A) */
-  --color-black-soft: #353535;   /* sidebar/topbar (was #222222) */
-  --color-black-card: #404040;   /* cards/modals (was #2C2C2C) */
-  --color-border: #5A5A5A;       /* borders/dividers (was #3A3A3A) */
-  --color-text: #F5F5F5;         /* primary text (was #E8E8E8) */
-  --color-text-dim: #FFFFFF;     /* table content (was #F0F0F0) */
-  --color-muted: #B0B0B0;        /* labels (was #888888) */
+  --color-black: #383838;        /* page bg */
+  --color-black-soft: #484848;   /* sidebar/topbar */
+  --color-black-card: #555555;   /* cards/modals */
+  --color-border: #707070;       /* borders/dividers */
+  --color-text: #FAFAFA;         /* primary text */
+  --color-text-dim: #FFFFFF;     /* table content */
+  --color-muted: #C8C8C8;        /* labels */
   --color-svc-green: #4CAF50;    /* brighter for contrast (was #2E7D32) */
   --color-svc-red: #EF5350;      /* brighter for contrast (was #C62828) */
 

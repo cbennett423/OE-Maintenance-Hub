@@ -181,12 +181,12 @@ export default function Dashboard() {
                     type="category"
                     dataKey="name"
                     width={120}
-                    tick={{ fill: '#B0B0B0', fontSize: 11, fontFamily: 'Barlow Condensed' }}
+                    tick={{ fill: '#C8C8C8', fontSize: 11, fontFamily: 'Barlow Condensed' }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <Tooltip
-                    contentStyle={{ background: '#404040', border: '1px solid #5A5A5A', borderRadius: 4, color: '#F5F5F5', fontFamily: 'Barlow' }}
+                    contentStyle={{ background: '#555555', border: '1px solid #707070', borderRadius: 4, color: '#FAFAFA', fontFamily: 'Barlow' }}
                     cursor={{ fill: 'rgba(255,205,17,0.05)' }}
                   />
                   <Bar dataKey="count" radius={[0, 3, 3, 0]}>
