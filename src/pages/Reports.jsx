@@ -4,6 +4,7 @@ import PageHeader from '../components/layout/PageHeader'
 import { useEquipment } from '../hooks/useEquipment'
 import { useTrucks } from '../hooks/useTrucks'
 import { useRentals } from '../hooks/useRentals'
+import { useJobs } from '../hooks/useJobs'
 import { generateFleetReport } from '../lib/generateFleetReport'
 import { useAuth } from '../context/AuthContext'
 import { writeAuditLog } from '../lib/auditLog'
@@ -16,6 +17,7 @@ export default function Reports() {
   const { equipment, updateUnit, refetch: refetchEquipment } = useEquipment()
   const { trucks, updateTruck, refetch: refetchTrucks } = useTrucks()
   const { rentals } = useRentals()
+  const { jobs } = useJobs()
   const [generating, setGenerating] = useState(false)
 
   // Import state
@@ -26,7 +28,7 @@ export default function Reports() {
   async function handleGenerateFleetReport() {
     setGenerating(true)
     try {
-      generateFleetReport(equipment, rentals)
+      generateFleetReport(equipment, rentals, { jobs })
       await writeAuditLog({
         unitLabel: 'SYSTEM',
         changeType: 'report_generated',

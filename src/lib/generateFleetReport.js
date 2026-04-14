@@ -47,6 +47,13 @@ export function generateFleetReport(equipment, rentals, options = {}) {
   const today = new Date()
   const dateStr = `${today.getMonth() + 1}/${today.getDate().toString().padStart(2, '0')}/${today.getFullYear()}`
 
+  // Address lookup by normalized site name (uppercase+trim). Options.jobs
+  // is expected to be the rows from the `jobs` table.
+  const addressMap = {}
+  for (const j of options.jobs || []) {
+    if (j.name) addressMap[j.name.toUpperCase().trim()] = j.address || ''
+  }
+
   // ── Page 1 & 2: Equipment Report ──────────────────────────
 
   drawHeader(doc, pageWidth, margin, dateStr, 'Equipment & Services Report')
@@ -76,13 +83,22 @@ export function generateFleetReport(equipment, rentals, options = {}) {
       startY = 52
     }
 
-    // Site header bar (black background, white text)
+    // Site header bar (black background, white site name + lighter address)
     doc.setFillColor(...DARK_GRAY)
     doc.rect(margin, startY, contentWidth, 7, 'F')
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(9)
     doc.setTextColor(...WHITE)
     doc.text(site, margin + 3, startY + 5)
+    const address = addressMap[site]
+    if (address) {
+      // Measure site name width to place the address after it
+      const siteWidth = doc.getTextWidth(site)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(200, 200, 200) // lighter gray
+      doc.text(`  \u00B7  ${address}`, margin + 3 + siteWidth, startY + 5)
+    }
     startY += 9
 
     // Build table data
