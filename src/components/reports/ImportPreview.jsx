@@ -133,6 +133,7 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
                 <Th className="text-center" />
                 <Th className="text-right">{newLabel}</Th>
                 <Th className="text-right">Change</Th>
+                {isEquipment && <Th>Site</Th>}
               </tr>
             </thead>
             <tbody>
@@ -141,6 +142,7 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
                 const label = isEquipment ? unit?.label : unit?.name || unit?.unit
                 const oldVal = isEquipment ? m.oldHours : m.oldOdometer
                 const newVal = isEquipment ? m.newHours : m.newOdometer
+                const hoursChanged = isEquipment ? m.hoursChanged : true
                 const diff = newVal - (oldVal || 0)
                 const checked = selected.has(i)
                 return (
@@ -164,16 +166,33 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
                       {oldVal != null ? Number(oldVal).toLocaleString() : '—'}
                     </td>
                     <td className="px-4 py-2 text-center text-cat-yellow">
-                      <ArrowRight size={14} className="inline" />
+                      {hoursChanged ? <ArrowRight size={14} className="inline" /> : <span className="text-muted">·</span>}
                     </td>
                     <td className="px-4 py-2 font-mono text-text-dim text-right font-bold">
-                      {Number(newVal).toLocaleString()}
+                      {hoursChanged ? Number(newVal).toLocaleString() : <span className="text-muted">{Number(oldVal || 0).toLocaleString()}</span>}
                     </td>
                     <td className="px-4 py-2 font-mono text-right text-xs">
-                      <span className={diff > 0 ? 'text-svc-green' : diff < 0 ? 'text-svc-red' : 'text-muted'}>
-                        {diff > 0 ? '+' : ''}{diff.toLocaleString()}
-                      </span>
+                      {hoursChanged ? (
+                        <span className={diff > 0 ? 'text-svc-green' : diff < 0 ? 'text-svc-red' : 'text-muted'}>
+                          {diff > 0 ? '+' : ''}{diff.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
                     </td>
+                    {isEquipment && (
+                      <td className="px-4 py-2 text-xs">
+                        {m.siteChanged ? (
+                          <div className="flex items-center gap-1.5 text-cat-yellow">
+                            <span className="text-muted">{m.oldSite || '—'}</span>
+                            <ArrowRight size={11} />
+                            <span className="font-bold">{m.newSite}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted">{m.oldSite || '—'}</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 )
               })}

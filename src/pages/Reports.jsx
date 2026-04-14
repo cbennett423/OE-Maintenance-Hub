@@ -78,7 +78,11 @@ export default function Reports() {
   async function applyVisionLinkUpdates(changed) {
     let count = 0
     for (const m of changed) {
-      const result = await updateUnit(m.equipment.id, { hours: m.newHours }, m.equipment)
+      const patch = {}
+      if (m.hoursChanged) patch.hours = m.newHours
+      if (m.siteChanged) patch.site = m.newSite
+      if (Object.keys(patch).length === 0) continue
+      const result = await updateUnit(m.equipment.id, patch, m.equipment)
       if (!result.error) count++
     }
     await refetchEquipment()

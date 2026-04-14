@@ -97,23 +97,69 @@ export function matchVisionLinkToEquipment(parsedRows, equipment) {
     }
   }
 
+  // Build a set of known site names (uppercased) for fuzzy matching
+  const knownSites = new Set()
+  for (const unit of equipment) {
+    if (unit.site) knownSites.add(unit.site.toUpperCase().trim())
+  }
+
   return parsedRows.map((row) => {
     const match = serialMap[row.serial.toUpperCase()]
     if (!match) return { parsed: row, equipment: null, matched: false }
 
     const oldHours = match.hours
     const newHours = Math.round(row.hours)
+
+    const oldSite = match.site || null
+    const newSite = resolveSiteName(row.geofence, knownSites)
+
+    const hoursChanged = newHours !== oldHours
+    const siteChanged =
+      newSite && oldSite
+        ? newSite.toUpperCase().trim() !== oldSite.toUpperCase().trim()
+        : newSite && !oldSite
+          ? true
+          : false
+
     return {
       parsed: row,
       equipment: match,
       matched: true,
       oldHours,
       newHours,
-      changed: newHours !== oldHours,
-      // Skip units with telematics issues
+      oldSite,
+      newSite,
+      hoursChanged,
+      siteChanged,
+      changed: hoursChanged || siteChanged,
       skip: match.telematics_issue === true,
     }
   })
+}
+
+/**
+ * Try to map a VisionLink geofence name to a known site name.
+ * Returns the matching known site (preserving its existing casing) or
+ * the raw geofence value if no match is found.
+ */
+function resolveSiteName(geofence, knownSites) {
+  if (!geofence) return null
+  const normalized = geofence.toUpperCase().trim()
+  if (!normalized) return null
+
+  // Exact match (case-insensitive)
+  for (const site of knownSites) {
+    if (site === normalized) return geofence.trim()
+  }
+
+  // Partial match — geofence contains site name or vice versa
+  for (const site of knownSites) {
+    if (normalized.includes(site) || site.includes(normalized)) {
+      return geofence.trim()
+    }
+  }
+
+  return geofence.trim()
 }
 
 /**
