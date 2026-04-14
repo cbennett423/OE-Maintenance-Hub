@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, AlertTriangle, Wrench, ClipboardList } from 'lucide-react'
+import { ArrowLeft, Pencil, AlertTriangle, Wrench, ClipboardList, FileText } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import ServiceBadge from '../components/equipment/ServiceBadge'
 import EditUnitModal from '../components/equipment/EditUnitModal'
@@ -80,16 +80,25 @@ export default function UnitProfile() {
       {/* Hero card */}
       <div className="bg-black-card border border-border border-t-4 border-t-cat-yellow rounded-lg p-6 mb-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="font-display text-3xl font-bold uppercase tracking-wider text-text">
-              {unit.label}
-            </h1>
-            <p className="font-mono text-sm text-muted mt-1">
-              {unit.serial || '—'}
-            </p>
-            <p className="text-xs uppercase tracking-wider text-muted mt-2">
-              {unit.site || 'UNASSIGNED'}
-            </p>
+          <div className="flex items-start gap-4 flex-1 min-w-0">
+            {unit.photo_url && (
+              <img
+                src={unit.photo_url}
+                alt={unit.label}
+                className="w-32 h-32 object-cover rounded border border-border shrink-0"
+              />
+            )}
+            <div className="min-w-0">
+              <h1 className="font-display text-3xl font-bold uppercase tracking-wider text-text">
+                {unit.label}
+              </h1>
+              <p className="font-mono text-sm text-muted mt-1">
+                {unit.serial || '—'}
+              </p>
+              <p className="text-xs uppercase tracking-wider text-muted mt-2">
+                {unit.site || 'UNASSIGNED'}
+              </p>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-xs uppercase tracking-wider text-muted font-display">
@@ -135,6 +144,100 @@ export default function UnitProfile() {
           </button>
         </div>
       </div>
+
+      {/* Specs + Product Link side-by-side */}
+      {(unit.make || unit.model || unit.year || unit.engine || unit.weight || unit.bucket_size ||
+        unit.product_link_radio || unit.product_link_radio_software || unit.product_link_ecm || unit.product_link_ecm_software) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          {(unit.make || unit.model || unit.year || unit.engine || unit.weight || unit.bucket_size) && (
+            <div>
+              <SectionHeader title="Specs" />
+              <div className="bg-black-card border border-border rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <SpecRow label="Make" value={unit.make} />
+                  <SpecRow label="Model" value={unit.model} />
+                  <SpecRow label="Year" value={unit.year} />
+                  <SpecRow label="Engine" value={unit.engine} />
+                  <SpecRow label="Weight" value={unit.weight} />
+                  <SpecRow label="Bucket Size" value={unit.bucket_size} />
+                </div>
+              </div>
+            </div>
+          )}
+          {(unit.product_link_radio || unit.product_link_radio_software || unit.product_link_ecm || unit.product_link_ecm_software) && (
+            <div>
+              <SectionHeader title="Product Link" />
+              <div className="bg-black-card border border-border rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <SpecRow label="Radio" value={unit.product_link_radio} mono />
+                  <SpecRow label="Radio Software" value={unit.product_link_radio_software} mono />
+                  <SpecRow label="ECM" value={unit.product_link_ecm} mono />
+                  <SpecRow label="ECM Software" value={unit.product_link_ecm_software} mono />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Documents */}
+      {Array.isArray(unit.documents) && unit.documents.length > 0 && (
+        <>
+          <SectionHeader title="Documents" />
+          <div className="bg-black-card border border-border rounded-lg overflow-hidden mb-6">
+            {unit.documents.map((doc, i) => (
+              <a
+                key={i}
+                href={doc.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-b-0 hover:bg-cat-yellow/5 transition-colors"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText size={14} className="text-muted shrink-0" />
+                  <span className="text-sm text-text-dim truncate">{doc.name}</span>
+                </div>
+                {doc.size && (
+                  <span className="text-[11px] text-muted shrink-0 ml-3">
+                    {Math.round(doc.size / 1024)} KB
+                  </span>
+                )}
+              </a>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Wear Parts */}
+      {Array.isArray(unit.wear_parts) && unit.wear_parts.length > 0 && (
+        <>
+          <SectionHeader title="Wear Parts" />
+          <div className="bg-black-card border border-border rounded-lg overflow-hidden mb-6">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-border bg-black-soft">
+                  <th className="px-4 py-2 font-display font-semibold uppercase tracking-wider text-muted text-[11px]">Part</th>
+                  <th className="px-4 py-2 font-display font-semibold uppercase tracking-wider text-muted text-[11px]">Part #</th>
+                  <th className="px-4 py-2 font-display font-semibold uppercase tracking-wider text-muted text-[11px]">Last Replaced</th>
+                  <th className="px-4 py-2 font-display font-semibold uppercase tracking-wider text-muted text-[11px]">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unit.wear_parts.map((p, i) => (
+                  <tr key={i} className="border-b border-border last:border-b-0">
+                    <td className="px-4 py-2 text-text-dim text-sm font-medium">{p.name || '—'}</td>
+                    <td className="px-4 py-2 text-xs text-muted font-mono">{p.part_number || '—'}</td>
+                    <td className="px-4 py-2 text-xs text-muted whitespace-nowrap">
+                      {p.last_replaced ? formatShortDate(p.last_replaced) : '—'}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-text-dim">{p.notes || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {/* Work Orders */}
       <SectionHeader title="Work Orders" />
@@ -321,6 +424,26 @@ function SectionHeader({ title }) {
       </h3>
     </div>
   )
+}
+
+function SpecRow({ label, value, mono }) {
+  return (
+    <div>
+      <p className="text-[11px] font-display uppercase tracking-wider text-muted">
+        {label}
+      </p>
+      <p className={`text-sm text-text-dim mt-0.5 ${mono ? 'font-mono' : ''}`}>
+        {value || '—'}
+      </p>
+    </div>
+  )
+}
+
+function formatShortDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`
 }
 
 function formatWhen(iso) {
