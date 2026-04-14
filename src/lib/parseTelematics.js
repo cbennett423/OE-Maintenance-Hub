@@ -160,19 +160,21 @@ function resolveSiteName(geofence, knownSites) {
   const normalized = geofence.toUpperCase().trim()
   if (!normalized) return null
 
-  // Exact match (case-insensitive)
+  // Exact match against a known site — return the canonical uppercase form
+  // so stored data stays consistent across imports.
   for (const site of knownSites) {
-    if (site === normalized) return geofence.trim()
+    if (site === normalized) return site
   }
 
-  // Partial match — geofence contains site name or vice versa
+  // Partial match — prefer the known site's canonical form
   for (const site of knownSites) {
     if (normalized.includes(site) || site.includes(normalized)) {
-      return geofence.trim()
+      return site
     }
   }
 
-  return geofence.trim()
+  // Unknown site — store the normalized uppercase form so future matching works
+  return normalized
 }
 
 /**

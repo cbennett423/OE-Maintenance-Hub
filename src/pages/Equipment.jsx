@@ -75,11 +75,14 @@ export default function Equipment() {
       return true
     })
     // Sort by site rank so units with the same site are always contiguous.
-    // Preserves sort_order / label within each site.
+    // Uses the normalized (uppercase + trim) site string for grouping so
+    // slight differences in casing/whitespace don't split a site in two.
     return result.sort((a, b) => {
       const rankDiff = siteRank(a.site) - siteRank(b.site)
       if (rankDiff !== 0) return rankDiff
-      const siteDiff = (a.site || '').localeCompare(b.site || '')
+      const aNorm = (a.site || '').toUpperCase().trim()
+      const bNorm = (b.site || '').toUpperCase().trim()
+      const siteDiff = aNorm.localeCompare(bNorm)
       if (siteDiff !== 0) return siteDiff
       const aOrder = a.sort_order ?? 9999
       const bOrder = b.sort_order ?? 9999

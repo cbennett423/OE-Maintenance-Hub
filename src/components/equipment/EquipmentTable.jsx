@@ -26,17 +26,18 @@ export default function EquipmentTable({ equipment, onRowClick, onViewProfile })
           </thead>
           <tbody>
             {equipment.map((unit, i) => {
-              const prevSite = i > 0 ? equipment[i - 1].site : null
-              const showDivider = unit.site !== prevSite
+              const normSite = (unit.site || '').toUpperCase().trim()
+              const prevNormSite = i > 0 ? (equipment[i - 1].site || '').toUpperCase().trim() : null
+              const showDivider = normSite !== prevNormSite
               return (
               <>
               {showDivider && (
-                <tr key={`site-${unit.site}-${i}`} className="bg-black border-b border-border">
+                <tr key={`site-${normSite}-${i}`} className="bg-black border-b border-border">
                   <td colSpan={6} className="px-4 py-2">
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-5 bg-cat-yellow rounded-sm" />
                       <span className="font-display text-xs font-bold uppercase tracking-widest text-cat-yellow">
-                        {unit.site || 'UNASSIGNED'}
+                        {normSite || 'UNASSIGNED'}
                       </span>
                     </div>
                   </td>
