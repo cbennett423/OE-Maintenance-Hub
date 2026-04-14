@@ -120,7 +120,7 @@ export function generateFleetReport(equipment, rentals, options = {}) {
             data.cell.styles.textColor = RED
             data.cell.styles.fontStyle = 'bold'
           } else if (text) {
-            data.cell.styles.textColor = [40, 40, 40]
+            data.cell.styles.textColor = GREEN
             data.cell.styles.fontStyle = 'bold'
           }
         }
