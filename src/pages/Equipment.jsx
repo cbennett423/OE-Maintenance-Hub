@@ -15,7 +15,8 @@ const STATUS_FILTERS = [
   { value: 'kit', label: 'Kit Ordered' },
 ]
 
-// Site display order — matches the weekly fleet report
+// Site display order — matches the weekly fleet report.
+// FT Lupton and OE Shop are always pinned second-to-last and last.
 const SITE_ORDER = [
   'DIA PREFLIGHT',
   'HUF8 OVERLOT/APS HORIZON',
@@ -25,14 +26,16 @@ const SITE_ORDER = [
   'BRONCOS TRAINING FACILITY',
   'CU CHAP',
   'CU RESIDENCE HALLS',
-  'FT LUPTON STORAGE YARD',
-  'OE SHOP',
 ]
 
 function siteRank(site) {
-  if (!site) return 9999
-  const idx = SITE_ORDER.indexOf(site.toUpperCase().trim())
-  return idx === -1 ? 9998 : idx
+  if (!site) return 8500 // no site set — above FT Lupton/OE Shop
+  const normalized = site.toUpperCase().trim()
+  if (normalized === 'OE SHOP') return 10000 // always last
+  if (normalized === 'FT LUPTON STORAGE YARD') return 9000 // always second-to-last
+  const idx = SITE_ORDER.indexOf(normalized)
+  if (idx !== -1) return idx
+  return 5000 // unknown but set — sits between named sites and FT Lupton
 }
 
 export default function Equipment() {
