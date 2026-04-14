@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Trash2, PackageCheck } from 'lucide-react'
 import Modal from '../ui/Modal'
 
 const EMPTY_FORM = {
@@ -63,6 +63,19 @@ export default function EditRentalModal({
     setForm((f) => ({ ...f, [field]: value }))
   }
 
+  /**
+   * One-click "Mark Returned" — auto-fills today's date into date_returned.
+   * Chase can still edit the date in the field before saving if the
+   * rental was actually returned on a different day.
+   */
+  function markReturned() {
+    const t = new Date()
+    const today = `${t.getMonth() + 1}/${t.getDate()}/${t.getFullYear()}`
+    setForm((f) => ({ ...f, date_returned: today }))
+  }
+
+  const canMarkReturned = !isNew && !form.date_returned
+
   async function handleSave() {
     if (!form.equipment.trim()) {
       setError('Equipment is required.')
@@ -122,6 +135,16 @@ export default function EditRentalModal({
             )}
           </div>
           <div className="flex gap-2">
+            {canMarkReturned && (
+              <button
+                onClick={markReturned}
+                disabled={saving || deleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-semibold uppercase tracking-wider border border-svc-green/50 text-svc-green hover:bg-svc-green/10 rounded transition-colors disabled:opacity-50"
+                title="Fill today's date into Date Returned (still need to click Save Changes)"
+              >
+                <PackageCheck size={13} /> Mark Returned
+              </button>
+            )}
             <button
               onClick={onClose}
               disabled={saving || deleting}
