@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { diffForAuditLog, writeAuditLogBatch } from '../lib/auditLog'
+import { targetMarkFor } from '../lib/serviceLogic'
 
 /**
  * Fetches all equipment rows, exposes a refetch and an updateUnit
@@ -37,35 +38,36 @@ export function useEquipment() {
 
   const updateUnit = useCallback(
     async (id, changes, original) => {
-      // Auto-clear expired "XXXHR Done" markers. If the incoming patch
-      // includes new hours that push past the target interval mark (and
-      // the caller didn't already touch svc_override themselves), clear
-      // both svc_override and svc_done_at_hours so the Done tag disappears
-      // cleanly and the unit doesn't get stuck showing a stale completion.
+      // Auto-clear expired "XXXHR Done" markers. This covers two cases:
+      //   1. User had an existing Done marker and new hours cross its target
+      //   2. User is newly marking a service done, but hours are already
+      //      at/past the interval (e.g. 1000HR done at 1014 hrs) — no tag
+      //      should exist in the DB in that case.
+      // In both cases the Done override and its anchor are cleared so the
+      // display is clean and the data stays tidy.
       let effectiveChanges = changes
-      const newHoursRaw =
-        'hours' in changes ? changes.hours : original?.hours
-      const newHours =
-        newHoursRaw == null || newHoursRaw === '' ? null : Number(newHoursRaw)
-      const overrideUntouched = !('svc_override' in changes)
-      const doneMatch = String(original?.svc_override || '').match(
+      const postSave = { ...original, ...changes }
+      const doneMatch = String(postSave.svc_override || '').match(
         /^(\d+)HR\s+Done\b/i
       )
-      if (
-        overrideUntouched &&
-        doneMatch &&
-        original?.svc_done_at_hours != null &&
-        newHours != null
-      ) {
+      const postSaveHoursRaw = postSave.hours
+      const postSaveHours =
+        postSaveHoursRaw == null || postSaveHoursRaw === ''
+          ? null
+          : Number(postSaveHoursRaw)
+      const anchorRaw = postSave.svc_done_at_hours
+      const anchor =
+        anchorRaw == null || anchorRaw === '' ? null : Number(anchorRaw)
+      if (doneMatch && anchor != null && postSaveHours != null) {
         const intervalNum = parseInt(doneMatch[1], 10)
-        const anchor = Number(original.svc_done_at_hours) || 0
-        const targetMark =
-          Math.floor(anchor / intervalNum) * intervalNum + intervalNum
-        if (newHours >= targetMark) {
-          effectiveChanges = {
-            ...changes,
-            svc_override: null,
-            svc_done_at_hours: null,
+        if (intervalNum > 0) {
+          const targetMark = targetMarkFor(anchor, intervalNum)
+          if (postSaveHours >= targetMark) {
+            effectiveChanges = {
+              ...changes,
+              svc_override: null,
+              svc_done_at_hours: null,
+            }
           }
         }
       }

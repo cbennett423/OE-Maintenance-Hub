@@ -9,6 +9,22 @@ export const CAT_INTERVALS = [250, 500, 1000, 2000]
 export const WARNING_THRESHOLD = 75 // hours before next due
 
 /**
+ * Given the hours at which a service was completed and the interval
+ * number (250/500/1000/2000), determine which interval mark the service
+ * was "for". Uses the nearest multiple — so completing a 1000HR service
+ * at 1014 hrs targets 1000 (just passed), and completing it at 990 hrs
+ * targets 1000 (just ahead). Ties (exactly halfway) resolve to upper.
+ */
+export function targetMarkFor(anchorHours, intervalNum) {
+  const a = Number(anchorHours) || 0
+  const lower = Math.floor(a / intervalNum) * intervalNum
+  const upper = lower + intervalNum
+  const distLower = a - lower
+  const distUpper = upper - a
+  return distUpper <= distLower ? upper : lower
+}
+
+/**
  * Determine which interval label applies to a given target hour mark.
  * e.g. 2000 → "2000HR", 1500 → "500HR", 1250 → "250HR", 1000 → "1000HR"
  */
@@ -63,11 +79,12 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
       const intervalNum = parseInt(doneMatch[1], 10)
       const doneLabel = `${intervalNum}HR`
       if (unit.svc_done_at_hours != null && intervalNum > 0) {
-        // Target mark = next multiple of intervalNum strictly above the
-        // hours at the moment the service was marked complete.
-        const anchor = Number(unit.svc_done_at_hours) || 0
-        const targetMark =
-          Math.floor(anchor / intervalNum) * intervalNum + intervalNum
+        // Target mark = nearest multiple of intervalNum to the hours at
+        // the moment the service was marked complete. Late completions
+        // (e.g. 1000HR done at 1014) target the mark just passed (1000);
+        // early completions (e.g. 500HR done at 490) target the upcoming
+        // mark (500).
+        const targetMark = targetMarkFor(unit.svc_done_at_hours, intervalNum)
         if (hours < targetMark) {
           return {
             status: 'done',
