@@ -5,11 +5,14 @@ import { useEquipment } from '../hooks/useEquipment'
 import { useTrucks } from '../hooks/useTrucks'
 import { useRentals } from '../hooks/useRentals'
 import { generateFleetReport } from '../lib/generateFleetReport'
+import { useAuth } from '../context/AuthContext'
+import { writeAuditLog } from '../lib/auditLog'
 import { parseVisionLinkExport, parseSamsaraExport, matchVisionLinkToEquipment, matchSamsaraToTrucks } from '../lib/parseTelematics'
 import ImportPreview from '../components/reports/ImportPreview'
 
 
 export default function Reports() {
+  const { user } = useAuth()
   const { equipment, updateUnit, refetch: refetchEquipment } = useEquipment()
   const { trucks, updateTruck, refetch: refetchTrucks } = useTrucks()
   const { rentals } = useRentals()
@@ -20,10 +23,18 @@ export default function Reports() {
   const [importMatches, setImportMatches] = useState(null)
   const [importError, setImportError] = useState(null)
 
-  function handleGenerateFleetReport() {
+  async function handleGenerateFleetReport() {
     setGenerating(true)
     try {
       generateFleetReport(equipment, rentals)
+      await writeAuditLog({
+        unitLabel: 'SYSTEM',
+        changeType: 'report_generated',
+        field: 'fleet_report',
+        oldValue: null,
+        newValue: `Fleet report generated — ${equipment.length} units, ${rentals.filter(r => !r.date_returned).length} active rentals`,
+        changedBy: user?.email || 'unknown',
+      })
     } catch (err) {
       console.error('PDF generation failed', err)
       alert('Failed to generate report: ' + err.message)
