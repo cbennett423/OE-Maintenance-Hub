@@ -1,10 +1,6 @@
 import { useState } from 'react'
 import { Upload, Check, AlertTriangle, ArrowRight } from 'lucide-react'
 
-/**
- * Shows a preview of matched telematics data and lets the user confirm updates.
- * Used for both VisionLink (equipment hours) and Samsara (truck odometers).
- */
 export default function ImportPreview({ matches, type, onApply, onCancel }) {
   const [applying, setApplying] = useState(false)
   const [result, setResult] = useState(null)
@@ -15,16 +11,46 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
   const skipped = matched.filter((m) => m.skip)
   const unchanged = matched.filter((m) => !m.changed && !m.skip)
 
+  // Checkboxes: all changed items start checked
+  const [selected, setSelected] = useState(() => {
+    const set = new Set()
+    changed.forEach((_, i) => set.add(i))
+    return set
+  })
+
   const isEquipment = type === 'visionlink'
   const oldLabel = isEquipment ? 'Current Hours' : 'Current Odo'
   const newLabel = isEquipment ? 'New Hours' : 'New Odo'
   const unitField = isEquipment ? 'equipment' : 'truck'
 
+  const selectedCount = selected.size
+
+  function toggleOne(idx) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    if (selectedCount === changed.length) {
+      setSelected(new Set())
+    } else {
+      const set = new Set()
+      changed.forEach((_, i) => set.add(i))
+      setSelected(set)
+    }
+  }
+
   async function handleApply() {
+    const toApply = changed.filter((_, i) => selected.has(i))
+    if (toApply.length === 0) return
     setApplying(true)
     try {
-      const applied = await onApply(changed)
-      setResult({ success: applied, total: changed.length })
+      const applied = await onApply(toApply)
+      setResult({ success: applied, total: toApply.length })
     } catch (err) {
       setResult({ error: err.message })
     }
@@ -55,7 +81,7 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
       <div className="px-5 py-3 border-b border-border bg-black-soft flex items-center justify-between">
         <div className="flex items-center gap-4 text-xs">
           <span className="text-svc-green font-display font-semibold uppercase tracking-wider">
-            {changed.length} to update
+            {selectedCount} of {changed.length} selected
           </span>
           <span className="text-muted">
             {unchanged.length} unchanged
@@ -80,20 +106,28 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
           </button>
           <button
             onClick={handleApply}
-            disabled={applying || changed.length === 0}
+            disabled={applying || selectedCount === 0}
             className="px-4 py-1.5 text-xs font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors disabled:opacity-50"
           >
-            {applying ? 'Applying…' : `Apply ${changed.length} Updates`}
+            {applying ? 'Applying…' : `Apply ${selectedCount} Updates`}
           </button>
         </div>
       </div>
 
-      {/* Changes table */}
+      {/* Changes table with checkboxes */}
       {changed.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left border-b border-border">
+                <th className="px-4 py-2 w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedCount === changed.length}
+                    onChange={toggleAll}
+                    className="w-4 h-4 accent-cat-yellow"
+                  />
+                </th>
                 <Th>Unit</Th>
                 <Th className="text-right">{oldLabel}</Th>
                 <Th className="text-center" />
@@ -108,8 +142,23 @@ export default function ImportPreview({ matches, type, onApply, onCancel }) {
                 const oldVal = isEquipment ? m.oldHours : m.oldOdometer
                 const newVal = isEquipment ? m.newHours : m.newOdometer
                 const diff = newVal - (oldVal || 0)
+                const checked = selected.has(i)
                 return (
-                  <tr key={i} className={`border-b border-border ${i % 2 === 1 ? 'bg-black/30' : ''}`}>
+                  <tr
+                    key={i}
+                    onClick={() => toggleOne(i)}
+                    className={`border-b border-border cursor-pointer transition-colors ${
+                      !checked ? 'opacity-40' : ''
+                    } ${i % 2 === 1 ? 'bg-black/30' : ''} hover:bg-cat-yellow/5`}
+                  >
+                    <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleOne(i)}
+                        className="w-4 h-4 accent-cat-yellow"
+                      />
+                    </td>
                     <td className="px-4 py-2 text-text-dim font-medium">{label}</td>
                     <td className="px-4 py-2 font-mono text-muted text-right">
                       {oldVal != null ? Number(oldVal).toLocaleString() : '—'}
