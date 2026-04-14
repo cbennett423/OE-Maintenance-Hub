@@ -1,9 +1,39 @@
 import { useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import Modal from '../ui/Modal'
 
-export default function EditRentalModal({ rental, isOpen, onClose, onSave }) {
-  const [form, setForm] = useState({})
+const EMPTY_FORM = {
+  equipment: '',
+  vendor: '',
+  agreement_num: '',
+  id_num: '',
+  serial: '',
+  job: '',
+  date_out: '',
+  date_returned: '',
+  billed_thru: '',
+  authorized_by: '',
+  duration: '',
+  notes: '',
+}
+
+/**
+ * Shared modal for adding, editing, and deleting rentals.
+ * When `rental` is null (but isOpen is true), operates in "New" mode.
+ */
+export default function EditRentalModal({
+  rental,
+  isOpen,
+  onClose,
+  onSave,
+  onCreate,
+  onDelete,
+}) {
+  const isNew = !rental
+  const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
@@ -22,23 +52,46 @@ export default function EditRentalModal({ rental, isOpen, onClose, onSave }) {
         duration: rental.duration ?? '',
         notes: rental.notes ?? '',
       })
-      setError(null)
+    } else {
+      setForm(EMPTY_FORM)
     }
-  }, [rental])
-
-  if (!rental) return null
+    setError(null)
+    setConfirmDelete(false)
+  }, [rental, isOpen])
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
   }
 
   async function handleSave() {
+    if (!form.equipment.trim()) {
+      setError('Equipment is required.')
+      return
+    }
     setSaving(true)
     setError(null)
-    const result = await onSave(rental.id, form, rental)
+    const result = isNew
+      ? await onCreate(form)
+      : await onSave(rental.id, form, rental)
     setSaving(false)
     if (result?.error) {
       setError(result.error.message || 'Save failed')
+      return
+    }
+    onClose?.()
+  }
+
+  async function handleDelete() {
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setDeleting(true)
+    setError(null)
+    const result = await onDelete(rental.id, rental)
+    setDeleting(false)
+    if (result?.error) {
+      setError(result.error.message || 'Delete failed')
       return
     }
     onClose?.()
@@ -48,33 +101,51 @@ export default function EditRentalModal({ rental, isOpen, onClose, onSave }) {
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Edit Rental: ${rental.equipment}`}
+      title={isNew ? 'New Rental' : `Edit Rental: ${rental?.equipment || ''}`}
       size="lg"
       footer={
-        <>
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="px-4 py-1.5 text-sm font-display uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-1.5 text-sm font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save Changes'}
-          </button>
-        </>
+        <div className="flex items-center justify-between w-full">
+          <div>
+            {!isNew && onDelete && (
+              <button
+                onClick={handleDelete}
+                disabled={saving || deleting}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-semibold uppercase tracking-wider rounded transition-colors disabled:opacity-50 ${
+                  confirmDelete
+                    ? 'bg-svc-red text-white hover:bg-svc-red/80'
+                    : 'border border-svc-red/50 text-svc-red hover:bg-svc-red/10'
+                }`}
+              >
+                <Trash2 size={12} />
+                {deleting ? 'Deleting…' : confirmDelete ? 'Click again to confirm' : 'Delete'}
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              disabled={saving || deleting}
+              className="px-4 py-1.5 text-sm font-display uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || deleting}
+              className="px-4 py-1.5 text-sm font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : isNew ? 'Create Rental' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
       }
     >
       <div className="grid grid-cols-2 gap-4">
         <Field label="Equipment" span={2}>
-          <input type="text" value={form.equipment} onChange={(e) => update('equipment', e.target.value)} className="w-full input-dark" />
+          <input type="text" value={form.equipment} onChange={(e) => update('equipment', e.target.value)} placeholder="e.g. 305 Mini Ex + Bucket" className="w-full input-dark" />
         </Field>
         <Field label="Vendor">
-          <input type="text" value={form.vendor} onChange={(e) => update('vendor', e.target.value)} className="w-full input-dark" />
+          <input type="text" value={form.vendor} onChange={(e) => update('vendor', e.target.value)} placeholder="e.g. Wagner Rents" className="w-full input-dark" />
         </Field>
         <Field label="Agreement #">
           <input type="text" value={form.agreement_num} onChange={(e) => update('agreement_num', e.target.value)} className="w-full input-dark font-mono" />
@@ -89,10 +160,10 @@ export default function EditRentalModal({ rental, isOpen, onClose, onSave }) {
           <input type="text" value={form.job} onChange={(e) => update('job', e.target.value)} className="w-full input-dark" />
         </Field>
         <Field label="Date Out">
-          <input type="text" value={form.date_out} onChange={(e) => update('date_out', e.target.value)} className="w-full input-dark" />
+          <input type="text" value={form.date_out} onChange={(e) => update('date_out', e.target.value)} placeholder="M/D/YYYY" className="w-full input-dark" />
         </Field>
         <Field label="Date Returned">
-          <input type="text" value={form.date_returned} onChange={(e) => update('date_returned', e.target.value)} placeholder="—" className="w-full input-dark" />
+          <input type="text" value={form.date_returned} onChange={(e) => update('date_returned', e.target.value)} placeholder="— (blank if active)" className="w-full input-dark" />
         </Field>
         <Field label="Billed Thru">
           <input type="text" value={form.billed_thru} onChange={(e) => update('billed_thru', e.target.value)} className="w-full input-dark" />

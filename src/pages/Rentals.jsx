@@ -1,24 +1,21 @@
 import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Plus, Download, FileText } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import EditRentalModal from '../components/rentals/EditRentalModal'
+import Modal from '../components/ui/Modal'
 import { useRentals } from '../hooks/useRentals'
+import { generateRentalReport } from '../lib/generateRentalReport'
 
 export default function Rentals() {
-  const { rentals, loading, error, updateRental } = useRentals()
+  const { rentals, loading, error, updateRental, createRental, deleteRental } = useRentals()
   const [search, setSearch] = useState('')
   const [showReturned, setShowReturned] = useState(false)
   const [editingRental, setEditingRental] = useState(null)
+  const [addingRental, setAddingRental] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
 
-  const active = useMemo(
-    () => rentals.filter((r) => !r.date_returned),
-    [rentals]
-  )
-  const returned = useMemo(
-    () => rentals.filter((r) => !!r.date_returned),
-    [rentals]
-  )
-
+  const active = useMemo(() => rentals.filter((r) => !r.date_returned), [rentals])
+  const returned = useMemo(() => rentals.filter((r) => !!r.date_returned), [rentals])
   const displayList = showReturned ? returned : active
 
   const filtered = useMemo(() => {
@@ -36,9 +33,20 @@ export default function Rentals() {
   return (
     <div>
       <PageHeader title="Rentals">
-        <span className="text-sm text-muted">
-          {loading ? '…' : `${active.length} active`}
-        </span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setReportOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-semibold uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
+          >
+            <FileText size={13} /> Rental Report
+          </button>
+          <button
+            onClick={() => setAddingRental(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors"
+          >
+            <Plus size={13} /> New Rental
+          </button>
+        </div>
       </PageHeader>
 
       {/* Tabs + search */}
@@ -73,7 +81,7 @@ export default function Rentals() {
       {!loading && !error && filtered.length === 0 && (
         <div className="bg-black-card border border-border rounded-lg p-8 text-center">
           <p className="text-muted">
-            {showReturned ? 'No returned rentals.' : 'No active rentals.'}
+            {showReturned ? 'No returned rentals.' : 'No active rentals. Click "New Rental" to add one.'}
           </p>
         </div>
       )}
@@ -121,13 +129,141 @@ export default function Rentals() {
         </div>
       )}
 
+      {/* Edit existing */}
       <EditRentalModal
         rental={editingRental}
         isOpen={!!editingRental}
         onClose={() => setEditingRental(null)}
         onSave={updateRental}
+        onDelete={deleteRental}
+      />
+
+      {/* Create new */}
+      <EditRentalModal
+        rental={null}
+        isOpen={addingRental}
+        onClose={() => setAddingRental(false)}
+        onCreate={createRental}
+      />
+
+      {/* Report generator */}
+      <RentalReportModal
+        isOpen={reportOpen}
+        onClose={() => setReportOpen(false)}
+        rentals={rentals}
       />
     </div>
+  )
+}
+
+function RentalReportModal({ isOpen, onClose, rentals }) {
+  // Default to last 90 days
+  const today = new Date()
+  const ninetyAgo = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000)
+  const [startDate, setStartDate] = useState(toISO(ninetyAgo))
+  const [endDate, setEndDate] = useState(toISO(today))
+  const [generating, setGenerating] = useState(false)
+
+  function toISO(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  function handleGenerate() {
+    setGenerating(true)
+    try {
+      const start = new Date(startDate + 'T00:00:00')
+      const end = new Date(endDate + 'T23:59:59')
+      generateRentalReport(rentals, start, end)
+      setTimeout(() => {
+        setGenerating(false)
+        onClose()
+      }, 300)
+    } catch (err) {
+      setGenerating(false)
+      alert('Failed to generate report: ' + err.message)
+    }
+  }
+
+  function setPreset(days) {
+    const end = new Date()
+    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000)
+    setStartDate(toISO(start))
+    setEndDate(toISO(end))
+  }
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Generate Rental History Report"
+      footer={
+        <>
+          <button
+            onClick={onClose}
+            disabled={generating}
+            className="px-4 py-1.5 text-sm font-display uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleGenerate}
+            disabled={generating || !startDate || !endDate}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors disabled:opacity-50"
+          >
+            <Download size={13} />
+            {generating ? 'Generating…' : 'Generate PDF'}
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm text-muted mb-4">
+        Pick a date range. Includes every rental that overlapped the range — whether active or returned.
+      </p>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="block text-xs font-display font-semibold uppercase tracking-wider text-muted mb-1">
+            Start Date
+          </label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-full input-dark"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-display font-semibold uppercase tracking-wider text-muted mb-1">
+            End Date
+          </label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="w-full input-dark"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <p className="text-xs text-muted font-display uppercase tracking-wider mr-1 self-center">Quick:</p>
+        {[
+          { label: '30 days', days: 30 },
+          { label: '90 days', days: 90 },
+          { label: '6 months', days: 180 },
+          { label: '1 year', days: 365 },
+          { label: 'All time', days: 3650 },
+        ].map((p) => (
+          <button
+            key={p.label}
+            onClick={() => setPreset(p.days)}
+            className="px-2.5 py-1 text-[11px] font-display uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </Modal>
   )
 }
 
