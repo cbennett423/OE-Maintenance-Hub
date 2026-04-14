@@ -146,10 +146,10 @@ export default function UnitProfile() {
       </div>
 
       {/* Specs + Product Link side-by-side */}
-      {(unit.make || unit.model || unit.year || unit.engine || unit.weight || unit.bucket_size ||
+      {(unit.make || unit.model || unit.year || unit.bucket_size ||
         unit.product_link_radio || unit.product_link_radio_software || unit.product_link_ecm || unit.product_link_ecm_software) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          {(unit.make || unit.model || unit.year || unit.engine || unit.weight || unit.bucket_size) && (
+          {(unit.make || unit.model || unit.year || unit.bucket_size) && (
             <div>
               <SectionHeader title="Specs" />
               <div className="bg-black-card border border-border rounded-lg p-4">
@@ -157,8 +157,6 @@ export default function UnitProfile() {
                   <SpecRow label="Make" value={unit.make} />
                   <SpecRow label="Model" value={unit.model} />
                   <SpecRow label="Year" value={unit.year} />
-                  <SpecRow label="Engine" value={unit.engine} />
-                  <SpecRow label="Weight" value={unit.weight} />
                   <SpecRow label="Bucket Size" value={unit.bucket_size} />
                 </div>
               </div>
@@ -235,6 +233,20 @@ export default function UnitProfile() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </>
+      )}
+
+      {/* Custom Fields */}
+      {Array.isArray(unit.custom_fields) && unit.custom_fields.length > 0 && (
+        <>
+          <SectionHeader title="Custom Fields" />
+          <div className="bg-black-card border border-border rounded-lg p-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {unit.custom_fields.map((cf, i) => (
+                <SpecRow key={i} label={cf.label || '—'} value={cf.value} />
+              ))}
+            </div>
           </div>
         </>
       )}

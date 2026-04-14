@@ -22,9 +22,8 @@ const EDITABLE_FIELDS = [
   'make',
   'model',
   'year',
-  'engine',
-  'weight',
   'bucket_size',
+  'custom_fields',
   'product_link_radio',
   'product_link_radio_software',
   'product_link_ecm',
@@ -36,7 +35,7 @@ function pickEditable(unit) {
   if (!unit) return {}
   const out = {}
   for (const f of EDITABLE_FIELDS) {
-    if (f === 'documents' || f === 'wear_parts') {
+    if (f === 'documents' || f === 'wear_parts' || f === 'custom_fields') {
       out[f] = Array.isArray(unit[f]) ? unit[f] : []
     } else {
       out[f] = unit[f] ?? (typeof unit[f] === 'boolean' ? false : '')
@@ -111,9 +110,8 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
       make: form.make || null,
       model: form.model || null,
       year: form.year === '' || form.year == null ? null : Number(form.year),
-      engine: form.engine || null,
-      weight: form.weight || null,
       bucket_size: form.bucket_size || null,
+      custom_fields: Array.isArray(form.custom_fields) ? form.custom_fields : [],
       product_link_radio: form.product_link_radio || null,
       product_link_radio_software: form.product_link_radio_software || null,
       product_link_ecm: form.product_link_ecm || null,
@@ -282,24 +280,6 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
                 className="w-full input-dark"
               />
             </Field>
-            <Field label="Engine">
-              <input
-                type="text"
-                value={form.engine ?? ''}
-                onChange={(e) => update('engine', e.target.value)}
-                placeholder="e.g. CAT C7.1 ACERT"
-                className="w-full input-dark"
-              />
-            </Field>
-            <Field label="Weight">
-              <input
-                type="text"
-                value={form.weight ?? ''}
-                onChange={(e) => update('weight', e.target.value)}
-                placeholder="e.g. 80,000 lbs"
-                className="w-full input-dark"
-              />
-            </Field>
             <Field label="Bucket Size">
               <input
                 type="text"
@@ -368,6 +348,14 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
           <WearPartsEditor
             wearParts={form.wear_parts || []}
             onChange={(parts) => update('wear_parts', parts)}
+          />
+        </Section>
+
+        {/* ── Custom Fields section ─────────────────── */}
+        <Section title="Custom Fields">
+          <CustomFieldsEditor
+            customFields={form.custom_fields || []}
+            onChange={(fields) => update('custom_fields', fields)}
           />
         </Section>
 
@@ -660,6 +648,63 @@ function WearPartsEditor({ wearParts, onChange }) {
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-semibold uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
       >
         <Plus size={12} /> Add Wear Part
+      </button>
+    </div>
+  )
+}
+
+function CustomFieldsEditor({ customFields, onChange }) {
+  function addField() {
+    onChange([...(customFields || []), { label: '', value: '' }])
+  }
+  function updateField(i, field, value) {
+    const next = customFields.map((f, idx) => (idx === i ? { ...f, [field]: value } : f))
+    onChange(next)
+  }
+  function removeField(i) {
+    onChange(customFields.filter((_, idx) => idx !== i))
+  }
+
+  return (
+    <div className="space-y-2">
+      {customFields.length === 0 && (
+        <p className="text-muted text-xs italic">No custom fields.</p>
+      )}
+      {customFields.map((cf, i) => (
+        <div
+          key={i}
+          className="grid grid-cols-12 gap-2 items-start bg-black-soft border border-border rounded p-2"
+        >
+          <input
+            type="text"
+            value={cf.label}
+            onChange={(e) => updateField(i, 'label', e.target.value)}
+            placeholder="Field label (e.g. Tire size)"
+            className="col-span-5 input-dark text-xs"
+          />
+          <input
+            type="text"
+            value={cf.value}
+            onChange={(e) => updateField(i, 'value', e.target.value)}
+            placeholder="Value"
+            className="col-span-6 input-dark text-xs"
+          />
+          <button
+            onClick={() => removeField(i)}
+            type="button"
+            className="col-span-1 flex items-center justify-center text-muted hover:text-svc-red transition-colors py-1"
+            title="Remove"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={addField}
+        type="button"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-semibold uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
+      >
+        <Plus size={12} /> Add Custom Field
       </button>
     </div>
   )
