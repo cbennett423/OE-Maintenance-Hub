@@ -34,16 +34,16 @@ export default function Dashboard() {
 
   const loading = eqLoading || woLoading || rLoading || pLoading
 
-  // Service alerts
+  // Service alerts — include any unit with an active service status (not "none" or "done")
   const serviceAlerts = useMemo(() => {
     return equipment
       .map((u) => ({ unit: u, status: computeServiceStatus(u) }))
       .filter(({ status }) =>
-        ['due', 'kit', 'overdue', 'forceOverdue'].includes(status.status)
+        ['due', 'kit', 'overdue', 'forceOverdue', 'override'].includes(status.status)
       )
       .sort((a, b) => {
-        const order = { overdue: 0, forceOverdue: 0, due: 1, kit: 2 }
-        return (order[a.status.status] ?? 3) - (order[b.status.status] ?? 3)
+        const order = { overdue: 0, forceOverdue: 0, due: 1, kit: 2, override: 3 }
+        return (order[a.status.status] ?? 9) - (order[b.status.status] ?? 9)
       })
   }, [equipment])
 
@@ -151,12 +151,12 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Service alerts list */}
-        <Section title="Service Alerts" to="/equipment">
+        <Section title={`Service Alerts (${serviceAlerts.length})`} to="/equipment">
           {serviceAlerts.length === 0 ? (
             <p className="text-muted text-sm p-4">No service alerts.</p>
           ) : (
-            <div className="divide-y divide-border">
-              {serviceAlerts.slice(0, 6).map(({ unit }) => (
+            <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
+              {serviceAlerts.map(({ unit }) => (
                 <Link
                   key={unit.id}
                   to={`/equipment/${unit.id}`}
