@@ -125,21 +125,41 @@ export function generateFleetReport(equipment, rentals, options = {}) {
       alternateRowStyles: {
         fillColor: ROW_GRAY,
       },
-      didParseCell: function (data) {
-        // Color the service column based on status
-        if (data.section === 'body' && data.column.index === 2) {
-          const text = data.cell.text.join(' ').toLowerCase()
-          if (text.includes('order kit')) {
-            data.cell.styles.textColor = RED
-            data.cell.styles.fontStyle = 'bold'
-          } else if (text.includes('done')) {
-            data.cell.styles.textColor = [120, 120, 120]
-          } else if (text.includes('overdue')) {
-            data.cell.styles.textColor = RED
-            data.cell.styles.fontStyle = 'bold'
-          } else if (text) {
-            data.cell.styles.textColor = GREEN
-            data.cell.styles.fontStyle = 'bold'
+      willDrawCell: function (data) {
+        // Suppress default rendering on the service column so we can draw
+        // each line with its own color in didDrawCell.
+        if (data.section === 'body' && data.column.index === 2 && data.cell.raw) {
+          data.cell.text = []
+        }
+      },
+      didDrawCell: function (data) {
+        if (data.section === 'body' && data.column.index === 2 && data.cell.raw) {
+          const raw = String(data.cell.raw)
+          if (!raw.trim()) return
+
+          const lines = raw.split('\n')
+          const lineHeight = 3
+          const cellCenterX = data.cell.x + data.cell.width / 2
+          let y =
+            data.cell.y +
+            data.cell.height / 2 -
+            ((lines.length - 1) * lineHeight) / 2 +
+            1
+
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(7)
+
+          for (const line of lines) {
+            const lc = line.toLowerCase()
+            let color = GREEN
+            if (lc.includes('order kit') || lc.includes('overdue')) {
+              color = RED
+            } else if (lc.includes('done')) {
+              color = [120, 120, 120]
+            }
+            doc.setTextColor(...color)
+            doc.text(line, cellCenterX, y, { align: 'center' })
+            y += lineHeight
           }
         }
       },
