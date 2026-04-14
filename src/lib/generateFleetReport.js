@@ -2,7 +2,8 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { computeServiceStatus } from './serviceLogic'
 
-// Site order from handoff doc
+// Site order from handoff doc — FT Lupton and OE Shop are pinned last
+// via siteRank(), not listed here.
 const SITE_ORDER = [
   'DIA PREFLIGHT',
   'HUF8 OVERLOT/APS HORIZON',
@@ -12,9 +13,17 @@ const SITE_ORDER = [
   'BRONCOS TRAINING FACILITY',
   'CU CHAP',
   'CU RESIDENCE HALLS',
-  'FT LUPTON STORAGE YARD',
-  'OE SHOP',
 ]
+
+function siteRank(site) {
+  if (!site) return 8500
+  const normalized = site.toUpperCase().trim()
+  if (normalized === 'OE SHOP') return 10000
+  if (normalized === 'FT LUPTON STORAGE YARD') return 9000
+  const idx = SITE_ORDER.indexOf(normalized)
+  if (idx !== -1) return idx
+  return 5000
+}
 
 // CAT theme colors
 const CAT_YELLOW = [255, 205, 17]
@@ -42,11 +51,20 @@ export function generateFleetReport(equipment, rentals, options = {}) {
 
   drawHeader(doc, pageWidth, margin, dateStr, 'Equipment & Services Report')
 
-  // Group equipment by site in report order
+  // Group equipment by NORMALIZED site so case/whitespace differences
+  // don't split the same site into two sections.
   const grouped = groupBySite(equipment)
+
+  // Sort sites by rank (named → unknown → FT Lupton → OE Shop)
+  const sortedSites = Object.keys(grouped).sort((a, b) => {
+    const rankDiff = siteRank(a) - siteRank(b)
+    if (rankDiff !== 0) return rankDiff
+    return a.localeCompare(b)
+  })
+
   let startY = 52
 
-  for (const site of SITE_ORDER) {
+  for (const site of sortedSites) {
     const units = grouped[site]
     if (!units || units.length === 0) continue
 
@@ -125,69 +143,6 @@ export function generateFleetReport(equipment, rentals, options = {}) {
           }
         }
       },
-    })
-
-    startY = doc.lastAutoTable.finalY + 6
-  }
-
-  // Also add any units from sites not in the standard order
-  const knownSites = new Set(SITE_ORDER)
-  const extraSites = Object.keys(grouped).filter((s) => !knownSites.has(s))
-  for (const site of extraSites) {
-    const units = grouped[site]
-    if (!units || units.length === 0) continue
-
-    if (startY > pageHeight - 40) {
-      drawFooter(doc, pageWidth, pageHeight, margin)
-      doc.addPage()
-      drawHeader(doc, pageWidth, margin, dateStr, 'Equipment & Services Report')
-      startY = 52
-    }
-
-    doc.setFillColor(...DARK_GRAY)
-    doc.rect(margin, startY, contentWidth, 7, 'F')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9)
-    doc.setTextColor(...WHITE)
-    doc.text(site, margin + 3, startY + 5)
-    startY += 9
-
-    const tableData = units.map((u) => {
-      const svc = computeServiceStatus(u)
-      return [
-        u.label || '',
-        u.hours != null ? Number(u.hours).toLocaleString() : '—',
-        formatServiceText(svc, u),
-        u.notes || '',
-      ]
-    })
-
-    autoTable(doc, {
-      startY,
-      margin: { left: margin, right: margin },
-      head: [['EQUIPMENT', 'HOURS', 'SERVICE', 'NOTES / SERVICE INFO']],
-      body: tableData,
-      theme: 'plain',
-      styles: {
-        fontSize: 8,
-        cellPadding: { top: 2, bottom: 2, left: 2, right: 2 },
-        textColor: [40, 40, 40],
-        lineColor: [220, 220, 220],
-        lineWidth: 0.2,
-      },
-      headStyles: {
-        fontSize: 7,
-        fontStyle: 'bold',
-        textColor: [80, 80, 80],
-        fillColor: false,
-      },
-      columnStyles: {
-        0: { cellWidth: 45, fontStyle: 'bold' },
-        1: { cellWidth: 22, halign: 'center' },
-        2: { cellWidth: 28, halign: 'center', fontSize: 7 },
-        3: { cellWidth: 'auto', fontSize: 7.5 },
-      },
-      alternateRowStyles: { fillColor: ROW_GRAY },
     })
 
     startY = doc.lastAutoTable.finalY + 6
@@ -331,9 +286,18 @@ function drawFooter(doc, pageWidth, pageHeight, margin) {
 function groupBySite(equipment) {
   const grouped = {}
   for (const u of equipment) {
-    const site = u.site || 'UNASSIGNED'
-    if (!grouped[site]) grouped[site] = []
-    grouped[site].push(u)
+    const normalized = u.site ? u.site.toUpperCase().trim() : 'UNASSIGNED'
+    if (!grouped[normalized]) grouped[normalized] = []
+    grouped[normalized].push(u)
+  }
+  // Sort each group by sort_order then label for stable row ordering
+  for (const site of Object.keys(grouped)) {
+    grouped[site].sort((a, b) => {
+      const aOrder = a.sort_order ?? 9999
+      const bOrder = b.sort_order ?? 9999
+      if (aOrder !== bOrder) return aOrder - bOrder
+      return (a.label || '').localeCompare(b.label || '')
+    })
   }
   return grouped
 }
