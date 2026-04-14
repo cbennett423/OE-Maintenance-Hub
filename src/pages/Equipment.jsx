@@ -15,6 +15,26 @@ const STATUS_FILTERS = [
   { value: 'kit', label: 'Kit Ordered' },
 ]
 
+// Site display order — matches the weekly fleet report
+const SITE_ORDER = [
+  'DIA PREFLIGHT',
+  'HUF8 OVERLOT/APS HORIZON',
+  'COLUMBINE SQUARE',
+  '4 MILE',
+  'CCSD LAREDO',
+  'BRONCOS TRAINING FACILITY',
+  'CU CHAP',
+  'CU RESIDENCE HALLS',
+  'FT LUPTON STORAGE YARD',
+  'OE SHOP',
+]
+
+function siteRank(site) {
+  if (!site) return 9999
+  const idx = SITE_ORDER.indexOf(site.toUpperCase().trim())
+  return idx === -1 ? 9998 : idx
+}
+
 export default function Equipment() {
   const navigate = useNavigate()
   const { equipment, loading, error, updateUnit } = useEquipment()
@@ -31,7 +51,7 @@ export default function Equipment() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return equipment.filter((u) => {
+    const result = equipment.filter((u) => {
       if (siteFilter !== 'all' && u.site !== siteFilter) return false
       if (statusFilter !== 'all') {
         const s = computeServiceStatus(u).status
@@ -53,6 +73,18 @@ export default function Equipment() {
         if (!haystack.includes(q)) return false
       }
       return true
+    })
+    // Sort by site rank so units with the same site are always contiguous.
+    // Preserves sort_order / label within each site.
+    return result.sort((a, b) => {
+      const rankDiff = siteRank(a.site) - siteRank(b.site)
+      if (rankDiff !== 0) return rankDiff
+      const siteDiff = (a.site || '').localeCompare(b.site || '')
+      if (siteDiff !== 0) return siteDiff
+      const aOrder = a.sort_order ?? 9999
+      const bOrder = b.sort_order ?? 9999
+      if (aOrder !== bOrder) return aOrder - bOrder
+      return (a.label || '').localeCompare(b.label || '')
     })
   }, [equipment, search, siteFilter, statusFilter])
 
