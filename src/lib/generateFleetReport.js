@@ -18,8 +18,9 @@ const SITE_ORDER = [
 function siteRank(site) {
   if (!site) return 8500
   const normalized = site.toUpperCase().trim()
-  if (normalized === 'OE SHOP') return 10000
-  if (normalized === 'FT LUPTON STORAGE YARD') return 9000
+  // Substring match so casing/wording variants still pin correctly
+  if (normalized.includes('OE SHOP') || normalized === 'SHOP') return 10000
+  if (normalized.includes('LUPTON')) return 9000
   const idx = SITE_ORDER.indexOf(normalized)
   if (idx !== -1) return idx
   return 5000

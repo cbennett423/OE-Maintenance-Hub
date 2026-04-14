@@ -31,8 +31,10 @@ const SITE_ORDER = [
 function siteRank(site) {
   if (!site) return 8500 // no site set — above FT Lupton/OE Shop
   const normalized = site.toUpperCase().trim()
-  if (normalized === 'OE SHOP') return 10000 // always last
-  if (normalized === 'FT LUPTON STORAGE YARD') return 9000 // always second-to-last
+  // Substring match so "OE SHOP", "Shop", "OE Shop Yard" all land last,
+  // and "FT LUPTON YARD" / "FT LUPTON STORAGE YARD" land second-to-last.
+  if (normalized.includes('OE SHOP') || normalized === 'SHOP') return 10000
+  if (normalized.includes('LUPTON')) return 9000
   const idx = SITE_ORDER.indexOf(normalized)
   if (idx !== -1) return idx
   return 5000 // unknown but set — sits between named sites and FT Lupton
