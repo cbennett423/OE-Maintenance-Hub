@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { FileText, Upload, Check, Download } from 'lucide-react'
+import { FileText, Upload, Check, Download, Table } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import { useEquipment } from '../hooks/useEquipment'
 import { useTrucks } from '../hooks/useTrucks'
 import { useRentals } from '../hooks/useRentals'
 import { useJobs } from '../hooks/useJobs'
 import { generateFleetReport } from '../lib/generateFleetReport'
+import { generateTelematicsSpreadsheet } from '../lib/generateTelematicsSpreadsheet'
 import { useAuth } from '../context/AuthContext'
 import { writeAuditLog } from '../lib/auditLog'
 import { parseVisionLinkExport, parseSamsaraExport, matchVisionLinkToEquipment, matchSamsaraToTrucks } from '../lib/parseTelematics'
@@ -19,6 +20,7 @@ export default function Reports() {
   const { rentals } = useRentals()
   const { jobs } = useJobs()
   const [generating, setGenerating] = useState(false)
+  const [generatingSheet, setGeneratingSheet] = useState(false)
 
   // Import state
   const [importType, setImportType] = useState(null) // 'visionlink' | 'samsara' | null
@@ -42,6 +44,26 @@ export default function Reports() {
       alert('Failed to generate report: ' + err.message)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function handleGenerateMachineTelematicsReport() {
+    setGeneratingSheet(true)
+    try {
+      const count = generateTelematicsSpreadsheet(equipment)
+      await writeAuditLog({
+        unitLabel: 'SYSTEM',
+        changeType: 'report_generated',
+        field: 'machine_telematics_spreadsheet',
+        oldValue: null,
+        newValue: `Machine & telematics spreadsheet generated — ${count} units`,
+        changedBy: user?.email || 'unknown',
+      })
+    } catch (err) {
+      console.error('Spreadsheet generation failed', err)
+      alert('Failed to generate spreadsheet: ' + err.message)
+    } finally {
+      setGeneratingSheet(false)
     }
   }
 
@@ -140,6 +162,33 @@ export default function Reports() {
             >
               <Download size={15} />
               {generating ? 'Generating…' : 'Generate PDF'}
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-black-card border border-border rounded-lg p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Table size={20} className="text-cat-yellow mt-0.5 shrink-0" />
+              <div>
+                <h3 className="font-display text-base font-bold uppercase tracking-wider text-text">
+                  Machine & Telematics Export
+                </h3>
+                <p className="text-sm text-muted mt-1">
+                  Machine list with serial, hours, and radio/ECM firmware versions. Excludes units flagged with telematics issues.
+                </p>
+                <p className="text-xs text-muted mt-2">
+                  {equipment.filter(e => !e.telematics_issue).length} telematics-enabled units
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleGenerateMachineTelematicsReport}
+              disabled={generatingSheet || equipment.filter(e => !e.telematics_issue).length === 0}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors disabled:opacity-50 shrink-0"
+            >
+              <Download size={15} />
+              {generatingSheet ? 'Generating…' : 'Generate XLSX'}
             </button>
           </div>
         </div>
