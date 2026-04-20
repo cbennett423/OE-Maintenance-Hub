@@ -308,7 +308,7 @@ export default function UploadInvoiceModal({
 
 function SingleInvoiceForm({ form, onChange, equipment }) {
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Field label="Invoice #">
         <input
           type="text"
@@ -398,7 +398,7 @@ function SingleInvoiceForm({ form, onChange, equipment }) {
 function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) {
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Vendor (applies to all)">
           <input
             type="text"

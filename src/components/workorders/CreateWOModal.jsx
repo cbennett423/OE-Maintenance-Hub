@@ -94,7 +94,7 @@ export default function CreateWOModal({
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Equipment" span={2}>
           {preselectedUnit ? (
             <p className="text-text-dim text-sm py-1">{preselectedUnit.label}</p>

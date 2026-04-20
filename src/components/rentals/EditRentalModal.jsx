@@ -163,7 +163,7 @@ export default function EditRentalModal({
         </div>
       }
     >
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Equipment" span={2}>
           <input type="text" value={form.equipment} onChange={(e) => update('equipment', e.target.value)} placeholder="e.g. 305 Mini Ex + Bucket" className="w-full input-dark" />
         </Field>

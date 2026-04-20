@@ -220,7 +220,7 @@ function RentalReportModal({ isOpen, onClose, rentals }) {
         Pick a date range. Includes every rental that overlapped the range — whether active or returned.
       </p>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
         <div>
           <label className="block text-xs font-display font-semibold uppercase tracking-wider text-muted mb-1">
             Start Date

@@ -18,7 +18,7 @@ export default function Settings() {
       <div className="grid gap-6 max-w-4xl">
         {/* Current user */}
         <SettingsCard title="Current User">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <InfoRow label="Email" value={user?.email || '—'} />
             <InfoRow label="User ID" value={user?.id?.slice(0, 8) + '…' || '—'} mono />
             <InfoRow label="Role" value="Admin" />
@@ -51,7 +51,7 @@ export default function Settings() {
 
         {/* App info */}
         <SettingsCard title="App Info">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <InfoRow label="Version" value="Phase 7 — Audit Log & Admin" />
             <InfoRow label="Stack" value="React + Vite + Supabase" />
             <InfoRow label="Database" value="Supabase (US East)" />
@@ -416,7 +416,7 @@ function JobModal({ job, isOpen, onClose, onCreate, onUpdate, onDelete }) {
             className="w-full input-dark"
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-display font-semibold uppercase tracking-wider text-muted mb-1">
               Job Number

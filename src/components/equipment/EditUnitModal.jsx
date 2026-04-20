@@ -155,7 +155,7 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
       <div className="space-y-6">
         {/* ── Core section ─────────────────────────────── */}
         <Section title="Core">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Hours">
               <input
                 type="number"
@@ -184,7 +184,7 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
 
         {/* ── Service section ─────────────────────────── */}
         <Section title="Service">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Service Override" hint="Manual label (e.g. CHECK SERVICE)">
               <input
                 type="text"
@@ -252,7 +252,7 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
 
         {/* ── Specs section ─────────────────────────── */}
         <Section title="Specs">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Make">
               <input
                 type="text"
@@ -294,7 +294,7 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
 
         {/* ── Product Link section ─────────────────── */}
         <Section title="Product Link (Telematics)">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Radio">
               <input
                 type="text"

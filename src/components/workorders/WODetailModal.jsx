@@ -128,7 +128,7 @@ export default function WODetailModal({ workOrder, isOpen, onClose, onUpdate }) 
       </div>
 
       {/* Editable fields */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Description" span={2}>
           <textarea
             value={form.description}

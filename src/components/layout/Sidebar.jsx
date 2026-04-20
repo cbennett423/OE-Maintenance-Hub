@@ -28,7 +28,7 @@ const navItems = [
 
 export default function Sidebar() {
   return (
-    <aside className="w-[220px] min-h-screen bg-black-soft border-r border-border flex flex-col shrink-0">
+    <aside className="w-[220px] min-h-screen bg-black-soft border-r border-border hidden md:flex flex-col shrink-0">
       <div className="px-5 py-4 border-b border-border">
         <h1 className="font-display text-base font-bold uppercase tracking-widest text-cat-yellow leading-tight">
           OE Maintenance

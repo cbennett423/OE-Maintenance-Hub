@@ -66,7 +66,7 @@ export default function WorkOrders() {
       </PageHeader>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
         <StatCard label="Open" value={counts.open} color="border-t-cat-yellow" />
         <StatCard label="In Progress" value={counts.in_progress} color="border-t-blue-500" />
         <StatCard label="Completed" value={counts.completed} color="border-t-svc-green" />
