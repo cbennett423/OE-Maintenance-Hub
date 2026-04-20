@@ -28,6 +28,7 @@ export default function InvoiceDetailModal({
         total_amount: invoice.total_amount ?? '',
         mpw_wo_number: invoice.mpw_wo_number ?? '',
         equipment_id: invoice.equipment_id || '',
+        description: invoice.description || '',
         notes: invoice.notes || '',
       })
       setError(null)
@@ -51,6 +52,7 @@ export default function InvoiceDetailModal({
       total_amount: form.total_amount === '' || form.total_amount == null ? null : Number(form.total_amount),
       mpw_wo_number: form.mpw_wo_number === '' || form.mpw_wo_number == null ? null : Number(form.mpw_wo_number),
       equipment_id: form.equipment_id || null,
+      description: form.description.trim() || null,
       notes: form.notes.trim() || null,
     }
     const result = await onUpdate(invoice.id, changes, invoice)
@@ -251,6 +253,16 @@ export default function InvoiceDetailModal({
               </option>
             ))}
           </select>
+        </Field>
+
+        <Field label="Description" span={2}>
+          <input
+            type="text"
+            value={form.description}
+            onChange={(e) => update('description', e.target.value)}
+            placeholder="Short label, e.g. 305 A-service kit"
+            className="w-full input-dark"
+          />
         </Field>
 
         <Field label="Notes" span={2}>

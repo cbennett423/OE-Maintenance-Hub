@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Upload, FileText, X } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
+import { parseInvoicePdf } from '../../lib/parseInvoicePdf'
 
 const BUCKET = 'equipment-files'
 
@@ -13,6 +14,20 @@ function emptyForm() {
     total_amount: '',
     mpw_wo_number: '',
     equipment_id: '',
+    description: '',
+    notes: '',
+  }
+}
+
+function emptyRow(seed = {}) {
+  return {
+    selected: true,
+    invoice_number: seed.invoiceNumber || '',
+    invoice_date: seed.invoiceDate || '',
+    mpw_wo_number: '',
+    equipment_id: '',
+    total_amount: '',
+    description: '',
     notes: '',
   }
 }
@@ -23,24 +38,40 @@ export default function UploadInvoiceModal({
   onCreate,
   equipment = [],
 }) {
-  const [form, setForm] = useState(emptyForm())
+  // Shared state
   const [invoiceId, setInvoiceId] = useState(() => crypto.randomUUID())
   const [pdf, setPdf] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [parsing, setParsing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [vendor, setVendor] = useState('Caterpillar')
+
+  // Single-invoice mode state
+  const [form, setForm] = useState(emptyForm())
+
+  // Multi-invoice mode state (rows > 1 means multi-mode UI)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
     if (isOpen) {
-      setForm(emptyForm())
       setInvoiceId(crypto.randomUUID())
       setPdf(null)
+      setForm(emptyForm())
+      setRows([])
+      setVendor('Caterpillar')
       setError(null)
     }
   }, [isOpen])
 
-  function update(field, value) {
+  const isMultiMode = rows.length > 1
+
+  function updateForm(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
+  }
+
+  function updateRow(i, field, value) {
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)))
   }
 
   async function handleUpload(file) {
@@ -65,6 +96,26 @@ export default function UploadInvoiceModal({
       size: file.size,
     })
     setUploading(false)
+
+    // Parse locally in the browser — no API call
+    setParsing(true)
+    try {
+      const parsed = await parseInvoicePdf(file)
+      if (parsed.length >= 2) {
+        setRows(parsed.map(emptyRow))
+      } else if (parsed.length === 1) {
+        setForm((f) => ({
+          ...f,
+          invoice_number: parsed[0].invoiceNumber || f.invoice_number,
+          invoice_date: parsed[0].invoiceDate || f.invoice_date,
+        }))
+      }
+      // parsed.length === 0 → silent fallback to manual entry
+    } catch {
+      // Swallow — user can still type manually
+    } finally {
+      setParsing(false)
+    }
   }
 
   async function handleRemovePdf() {
@@ -72,9 +123,18 @@ export default function UploadInvoiceModal({
       await supabase.storage.from(BUCKET).remove([pdf.path]).catch(() => {})
     }
     setPdf(null)
+    setRows([])
+    setForm(emptyForm())
   }
 
-  async function handleSave() {
+  async function handleCancel() {
+    if (pdf?.path) {
+      await supabase.storage.from(BUCKET).remove([pdf.path]).catch(() => {})
+    }
+    onClose?.()
+  }
+
+  async function handleSaveSingle() {
     if (!pdf) {
       setError('Please upload the invoice PDF first.')
       return
@@ -89,6 +149,7 @@ export default function UploadInvoiceModal({
       total_amount: form.total_amount === '' ? null : Number(form.total_amount),
       mpw_wo_number: form.mpw_wo_number === '' ? null : Number(form.mpw_wo_number),
       equipment_id: form.equipment_id || null,
+      description: form.description.trim() || null,
       notes: form.notes.trim() || null,
       pdf_url: pdf.url,
       pdf_path: pdf.path,
@@ -101,34 +162,72 @@ export default function UploadInvoiceModal({
     onClose?.()
   }
 
-  async function handleCancel() {
-    if (pdf?.path) {
-      await supabase.storage.from(BUCKET).remove([pdf.path]).catch(() => {})
+  async function handleSaveMulti() {
+    if (!pdf) {
+      setError('Please upload the invoice PDF first.')
+      return
     }
+    const selected = rows.filter((r) => r.selected)
+    if (selected.length === 0) {
+      setError('Select at least one invoice to save.')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    for (const row of selected) {
+      // All records share the same pdf_url/pdf_path. Each gets its own id
+      // generated inside createInvoice (we omit id here so the hook creates one).
+      const result = await onCreate({
+        invoice_number: row.invoice_number.trim() || null,
+        invoice_date: row.invoice_date || null,
+        vendor: vendor.trim() || 'Caterpillar',
+        total_amount: row.total_amount === '' ? null : Number(row.total_amount),
+        mpw_wo_number: row.mpw_wo_number === '' ? null : Number(row.mpw_wo_number),
+        equipment_id: row.equipment_id || null,
+        description: row.description.trim() || null,
+        notes: row.notes.trim() || null,
+        pdf_url: pdf.url,
+        pdf_path: pdf.path,
+      })
+      if (result?.error) {
+        setSaving(false)
+        setError(`Saved ${rows.indexOf(row)} of ${selected.length}: ${result.error.message || 'error'}`)
+        return
+      }
+    }
+    setSaving(false)
     onClose?.()
   }
+
+  const saveDisabled = saving || uploading || parsing || !pdf
+  const saveHandler = isMultiMode ? handleSaveMulti : handleSaveSingle
+  const saveLabel = saving
+    ? 'Saving…'
+    : isMultiMode
+      ? `Save ${rows.filter((r) => r.selected).length} Invoices`
+      : 'Save Invoice'
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={handleCancel}
-      title="Upload Invoice"
+      title={isMultiMode ? `Upload Invoice — ${rows.length} Detected` : 'Upload Invoice'}
       size="lg"
       footer={
         <>
           <button
             onClick={handleCancel}
-            disabled={saving || uploading}
+            disabled={saving || uploading || parsing}
             className="px-4 py-1.5 text-sm font-display uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
           >
             Cancel
           </button>
           <button
-            onClick={handleSave}
-            disabled={saving || uploading || !pdf}
+            onClick={saveHandler}
+            disabled={saveDisabled}
             className="px-4 py-1.5 text-sm font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Save Invoice'}
+            {saveLabel}
           </button>
         </>
       }
@@ -175,86 +274,27 @@ export default function UploadInvoiceModal({
               />
             </label>
           )}
-          <p className="text-[11px] text-muted/70 mt-1">
-            PDF stored in Supabase under invoices/{invoiceId}/
-          </p>
+          {parsing && (
+            <p className="text-[11px] text-muted mt-1">Reading invoice data from PDF…</p>
+          )}
         </div>
 
-        {/* Metadata */}
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Invoice #">
-            <input
-              type="text"
-              value={form.invoice_number}
-              onChange={(e) => update('invoice_number', e.target.value)}
-              placeholder="e.g. PIJ00001234"
-              className="w-full input-dark font-mono"
-            />
-          </Field>
-
-          <Field label="Invoice Date">
-            <input
-              type="date"
-              value={form.invoice_date}
-              onChange={(e) => update('invoice_date', e.target.value)}
-              className="w-full input-dark"
-            />
-          </Field>
-
-          <Field label="Vendor">
-            <input
-              type="text"
-              value={form.vendor}
-              onChange={(e) => update('vendor', e.target.value)}
-              className="w-full input-dark"
-            />
-          </Field>
-
-          <Field label="Total ($)">
-            <input
-              type="number"
-              step="0.01"
-              value={form.total_amount}
-              onChange={(e) => update('total_amount', e.target.value)}
-              placeholder="0.00"
-              className="w-full input-dark"
-            />
-          </Field>
-
-          <Field label="MPW WO #">
-            <input
-              type="number"
-              value={form.mpw_wo_number}
-              onChange={(e) => update('mpw_wo_number', e.target.value)}
-              placeholder="e.g. 1234567996"
-              className="w-full input-dark font-mono"
-            />
-          </Field>
-
-          <Field label="Equipment">
-            <select
-              value={form.equipment_id}
-              onChange={(e) => update('equipment_id', e.target.value)}
-              className="w-full input-dark"
-            >
-              <option value="">— (optional)</option>
-              {equipment.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Notes" span={2}>
-            <textarea
-              value={form.notes}
-              onChange={(e) => update('notes', e.target.value)}
-              rows={2}
-              className="w-full input-dark resize-none"
-            />
-          </Field>
-        </div>
+        {/* Mode branch */}
+        {isMultiMode ? (
+          <MultiInvoiceTable
+            rows={rows}
+            vendor={vendor}
+            setVendor={setVendor}
+            equipment={equipment}
+            onRowChange={updateRow}
+          />
+        ) : (
+          <SingleInvoiceForm
+            form={form}
+            onChange={updateForm}
+            equipment={equipment}
+          />
+        )}
 
         {error && (
           <div className="text-svc-red text-sm bg-svc-red/10 border border-svc-red/30 rounded px-3 py-2">
@@ -266,6 +306,206 @@ export default function UploadInvoiceModal({
   )
 }
 
+function SingleInvoiceForm({ form, onChange, equipment }) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <Field label="Invoice #">
+        <input
+          type="text"
+          value={form.invoice_number}
+          onChange={(e) => onChange('invoice_number', e.target.value)}
+          placeholder="e.g. AHC072415"
+          className="w-full input-dark font-mono"
+        />
+      </Field>
+
+      <Field label="Invoice Date">
+        <input
+          type="date"
+          value={form.invoice_date}
+          onChange={(e) => onChange('invoice_date', e.target.value)}
+          className="w-full input-dark"
+        />
+      </Field>
+
+      <Field label="Vendor">
+        <input
+          type="text"
+          value={form.vendor}
+          onChange={(e) => onChange('vendor', e.target.value)}
+          className="w-full input-dark"
+        />
+      </Field>
+
+      <Field label="Total ($)">
+        <input
+          type="number"
+          step="0.01"
+          value={form.total_amount}
+          onChange={(e) => onChange('total_amount', e.target.value)}
+          placeholder="0.00"
+          className="w-full input-dark"
+        />
+      </Field>
+
+      <Field label="MPW WO #">
+        <input
+          type="number"
+          value={form.mpw_wo_number}
+          onChange={(e) => onChange('mpw_wo_number', e.target.value)}
+          placeholder="e.g. 1234567996"
+          className="w-full input-dark font-mono"
+        />
+      </Field>
+
+      <Field label="Equipment">
+        <select
+          value={form.equipment_id}
+          onChange={(e) => onChange('equipment_id', e.target.value)}
+          className="w-full input-dark"
+        >
+          <option value="">— (optional)</option>
+          {equipment.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Description" span={2}>
+        <input
+          type="text"
+          value={form.description}
+          onChange={(e) => onChange('description', e.target.value)}
+          placeholder="Short label, e.g. 305 A-service kit"
+          className="w-full input-dark"
+        />
+      </Field>
+
+      <Field label="Notes" span={2}>
+        <textarea
+          value={form.notes}
+          onChange={(e) => onChange('notes', e.target.value)}
+          rows={2}
+          className="w-full input-dark resize-none"
+        />
+      </Field>
+    </div>
+  )
+}
+
+function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Vendor (applies to all)">
+          <input
+            type="text"
+            value={vendor}
+            onChange={(e) => setVendor(e.target.value)}
+            className="w-full input-dark"
+          />
+        </Field>
+        <div className="flex items-end">
+          <p className="text-xs text-muted">
+            {rows.length} invoices detected. Uncheck any you don't want to import.
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-black-soft border border-border rounded overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-black-soft/50">
+                <Th className="w-8"> </Th>
+                <Th>Invoice #</Th>
+                <Th>Description</Th>
+                <Th>Date</Th>
+                <Th>Equipment</Th>
+                <Th>MPW WO #</Th>
+                <Th>Total</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr key={i} className="border-b border-border last:border-0">
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={row.selected}
+                      onChange={(e) => onRowChange(i, 'selected', e.target.checked)}
+                      className="accent-cat-yellow"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="text"
+                      value={row.invoice_number}
+                      onChange={(e) => onRowChange(i, 'invoice_number', e.target.value)}
+                      className="w-full input-dark font-mono text-xs py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="text"
+                      value={row.description}
+                      onChange={(e) => onRowChange(i, 'description', e.target.value)}
+                      placeholder="Short label"
+                      className="w-full input-dark text-xs py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="date"
+                      value={row.invoice_date}
+                      onChange={(e) => onRowChange(i, 'invoice_date', e.target.value)}
+                      className="w-full input-dark text-xs py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <select
+                      value={row.equipment_id}
+                      onChange={(e) => onRowChange(i, 'equipment_id', e.target.value)}
+                      className="w-full input-dark text-xs py-1"
+                    >
+                      <option value="">—</option>
+                      {equipment.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="number"
+                      value={row.mpw_wo_number}
+                      onChange={(e) => onRowChange(i, 'mpw_wo_number', e.target.value)}
+                      className="w-full input-dark font-mono text-xs py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.total_amount}
+                      onChange={(e) => onRowChange(i, 'total_amount', e.target.value)}
+                      placeholder="0.00"
+                      className="w-full input-dark text-xs py-1"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Field({ label, children, span = 1 }) {
   return (
     <div className={span === 2 ? 'col-span-2' : ''}>
@@ -274,5 +514,15 @@ function Field({ label, children, span = 1 }) {
       </label>
       {children}
     </div>
+  )
+}
+
+function Th({ children, className = '' }) {
+  return (
+    <th
+      className={`px-3 py-2 text-left font-display font-semibold uppercase tracking-wider text-muted text-[10px] ${className}`}
+    >
+      {children}
+    </th>
   )
 }

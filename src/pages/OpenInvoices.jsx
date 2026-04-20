@@ -38,6 +38,19 @@ export default function OpenInvoices() {
     return map
   }, [equipment])
 
+  // Equipment labels are numeric (225, 305, etc.), so use natural numeric
+  // sort — otherwise string sort puts "10" before "2".
+  const sortedEquipment = useMemo(
+    () =>
+      [...equipment].sort((a, b) =>
+        String(a.label || '').localeCompare(String(b.label || ''), undefined, {
+          numeric: true,
+          sensitivity: 'base',
+        })
+      ),
+    [equipment]
+  )
+
   const vendors = useMemo(() => {
     const set = new Set()
     invoices.forEach((inv) => inv.vendor && set.add(inv.vendor))
@@ -66,6 +79,7 @@ export default function OpenInvoices() {
         const eq = equipmentById.get(inv.equipment_id)
         const haystack = [
           inv.invoice_number,
+          inv.description,
           inv.vendor,
           inv.notes,
           inv.mpw_wo_number,
@@ -117,7 +131,7 @@ export default function OpenInvoices() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search invoice #, MPW WO #, vendor, notes…"
+            placeholder="Search invoice #, description, MPW WO #, vendor, notes…"
             className="w-full pl-9 pr-3 py-2 bg-black-card border border-border rounded text-sm text-text placeholder:text-muted/60 focus:outline-none focus:border-cat-yellow"
           />
         </div>
@@ -172,6 +186,7 @@ export default function OpenInvoices() {
                 <tr className="text-left border-b-2 border-b-cat-yellow bg-black-soft">
                   <Th>Vendor</Th>
                   <Th>Invoice #</Th>
+                  <Th>Description</Th>
                   <Th>Date</Th>
                   <Th>Equipment</Th>
                   <Th>MPW WO #</Th>
@@ -194,6 +209,9 @@ export default function OpenInvoices() {
                       <td className="px-4 py-2.5 text-text-dim font-medium">{inv.vendor || '—'}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-muted">
                         {inv.invoice_number || '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-text-dim text-xs max-w-xs truncate">
+                        {inv.description || '—'}
                       </td>
                       <td className="px-4 py-2.5 text-muted text-xs whitespace-nowrap">
                         {inv.invoice_date || '—'}
@@ -237,7 +255,7 @@ export default function OpenInvoices() {
         isOpen={uploadOpen}
         onClose={() => setUploadOpen(false)}
         onCreate={createInvoice}
-        equipment={equipment}
+        equipment={sortedEquipment}
       />
       <InvoiceDetailModal
         invoice={selected}
@@ -247,7 +265,7 @@ export default function OpenInvoices() {
         onCloseInvoice={closeInvoice}
         onReopenInvoice={reopenInvoice}
         onDelete={deleteInvoice}
-        equipment={equipment}
+        equipment={sortedEquipment}
       />
     </div>
   )

@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   mpw_wo_number BIGINT,
   equipment_id TEXT,
   status TEXT NOT NULL DEFAULT 'open',
+  description TEXT,
   notes TEXT,
   date_closed DATE,
   mpw_receipt_api_key TEXT,

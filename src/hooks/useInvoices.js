@@ -55,6 +55,7 @@ export function useInvoices() {
             : Number(data.mpw_wo_number),
         equipment_id: data.equipment_id || null,
         status: 'open',
+        description: data.description || null,
         notes: data.notes || null,
         date_closed: null,
         created_at: now,
