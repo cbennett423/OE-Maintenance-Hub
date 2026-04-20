@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   pdf_url TEXT,
   pdf_path TEXT,
   mpw_wo_number BIGINT,
-  equipment_id UUID,
+  equipment_id TEXT,
   status TEXT NOT NULL DEFAULT 'open',
   notes TEXT,
   date_closed DATE,
