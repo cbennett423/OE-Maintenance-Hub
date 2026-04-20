@@ -10,6 +10,7 @@ import {
   Settings,
   HardHat,
   CalendarClock,
+  Receipt,
 } from 'lucide-react'
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { to: '/fleet', label: 'Fleet', icon: Truck },
   { to: '/rentals', label: 'Rentals', icon: CalendarClock },
   { to: '/work-orders', label: 'Work Orders', icon: Wrench },
+  { to: '/open-invoices', label: 'Open Invoices', icon: Receipt },
   { to: '/inventory', label: 'Inventory', icon: Package },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/audit-log', label: 'Audit Log', icon: History },

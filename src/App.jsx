@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Equipment from './pages/Equipment'
 import UnitProfile from './pages/UnitProfile'
 import WorkOrders from './pages/WorkOrders'
+import OpenInvoices from './pages/OpenInvoices'
 import Fleet from './pages/Fleet'
 import Rentals from './pages/Rentals'
 import Inventory from './pages/Inventory'
@@ -63,6 +64,7 @@ function AppRoutes() {
         <Route path="/equipment" element={<Equipment />} />
         <Route path="/equipment/:id" element={<UnitProfile />} />
         <Route path="/work-orders" element={<WorkOrders />} />
+        <Route path="/open-invoices" element={<OpenInvoices />} />
         <Route path="/fleet" element={<Fleet />} />
         <Route path="/rentals" element={<Rentals />} />
         <Route path="/inventory" element={<Inventory />} />
