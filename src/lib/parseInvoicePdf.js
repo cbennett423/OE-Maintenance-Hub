@@ -30,6 +30,12 @@ async function getPdfJs() {
   return pdfjsPromise
 }
 
+// Fire-and-forget warm-up so the ~1MB chunk is loaded before the user
+// picks a file. Safe to call repeatedly.
+export function preloadInvoicePdfParser() {
+  getPdfJs()
+}
+
 export async function parseInvoicePdf(file) {
   try {
     const pdfjsLib = await getPdfJs()

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Upload, FileText, X } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
-import { parseInvoicePdf } from '../../lib/parseInvoicePdf'
+import { parseInvoicePdf, preloadInvoicePdfParser } from '../../lib/parseInvoicePdf'
 
 const BUCKET = 'equipment-files'
 
@@ -61,6 +61,8 @@ export default function UploadInvoiceModal({
       setRows([])
       setVendor('Caterpillar')
       setError(null)
+      // Warm pdfjs (~1MB) while the user is still picking a file
+      preloadInvoicePdfParser()
     }
   }, [isOpen])
 
@@ -77,29 +79,24 @@ export default function UploadInvoiceModal({
   async function handleUpload(file) {
     if (!file) return
     setUploading(true)
+    setParsing(true)
     setError(null)
     const safeName = file.name.replace(/[^\w.\-]/g, '_')
     const path = `invoices/${invoiceId}/${Date.now()}_${safeName}`
-    const { error: upErr } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, file, { upsert: false })
-    if (upErr) {
-      setError(upErr.message)
-      setUploading(false)
-      return
-    }
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
-    setPdf({
-      name: file.name,
-      url: data.publicUrl,
-      path,
-      size: file.size,
-    })
-    setUploading(false)
 
-    // Parse locally in the browser — no API call
-    setParsing(true)
-    try {
+    // Upload and parse concurrently — they're independent, so no reason
+    // to make the user wait for the network round-trip before extracting
+    // fields (or vice-versa).
+    const uploadTask = (async () => {
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET)
+        .upload(path, file, { upsert: false })
+      if (upErr) throw upErr
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
+      setPdf({ name: file.name, url: data.publicUrl, path, size: file.size })
+    })().finally(() => setUploading(false))
+
+    const parseTask = (async () => {
       const parsed = await parseInvoicePdf(file)
       if (parsed.length >= 2) {
         setRows(parsed.map(emptyRow))
@@ -111,11 +108,19 @@ export default function UploadInvoiceModal({
         }))
       }
       // parsed.length === 0 → silent fallback to manual entry
-    } catch {
-      // Swallow — user can still type manually
-    } finally {
-      setParsing(false)
+    })()
+      .catch(() => {
+        // Swallow — user can still type manually
+      })
+      .finally(() => setParsing(false))
+
+    try {
+      await uploadTask
+    } catch (err) {
+      setError(err.message || 'Upload failed')
     }
+    // Don't block on parseTask — it updates state on its own when done.
+    parseTask
   }
 
   async function handleRemovePdf() {
