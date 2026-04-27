@@ -36,20 +36,12 @@ export function intervalLabelFor(targetHours) {
 }
 
 /**
- * Compute the next interval mark the unit still owes.
- *
- * The "next" mark is one interval (250 hrs) above the last completed
- * service. This means that once current hours cross a mark without a
- * service being logged, the mark stays owed (hoursToNext goes ≤ 0 and
- * the caller renders OVERDUE) rather than silently advancing to the
- * mark above.
- *
- * Pass `lastDoneHours = 0` when no service has ever been completed.
+ * Compute the next interval mark above `hours`.
+ * At exactly 500 hours, next is 750 (not 500).
  */
-export function nextIntervalMark(hours, lastDoneHours = 0) {
-  const lastDone = Math.max(0, Math.floor(lastDoneHours || 0))
-  const baseline = Math.floor(lastDone / 250) * 250
-  return baseline + 250
+export function nextIntervalMark(hours) {
+  const h = Math.max(0, Math.floor(hours || 0))
+  return Math.floor(h / 250) * 250 + 250
 }
 
 /**
@@ -73,11 +65,8 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
 
   const hours = Number(unit.hours) || 0
 
-  // Compute next interval up front so "Done" overrides can yield to it.
-  // Anchor on the last completed service hours so that an interval which
-  // was crossed without being serviced stays "owed" rather than silently
-  // advancing to the mark above.
-  const nextMark = nextIntervalMark(hours, unit.svc_done_at_hours || 0)
+  // Compute next interval up front so "Done" overrides can yield to it
+  const nextMark = nextIntervalMark(hours)
   const hoursToNext = nextMark - hours
   const label = intervalLabelFor(nextMark)
 
@@ -105,52 +94,58 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
             secondary: '',
           }
         }
-        // Expired — hours have crossed the interval that was marked
-        // complete. Fall through to the due/overdue logic below so the
-        // NEXT interval (anchored off svc_done_at_hours) gets surfaced.
-      } else {
-        // Legacy row without svc_done_at_hours → preserve always-show behavior
+        // Expired — hours have crossed the specific interval that was
+        // marked complete. Show nothing. Do NOT fall through to due/overdue
+        // so the unit doesn't re-trigger as a new service.
         return {
-          status: 'done',
-          intervalLabel: doneLabel,
-          hoursToNext: null,
-          primary: doneLabel,
+          status: 'none',
+          intervalLabel: label,
+          hoursToNext,
+          primary: '',
           secondary: '',
         }
       }
-    } else {
-      // Plain interval override (e.g. "500HR", "1000HR") — use the override
-      // as the forced interval label but still honor kit/order-kit behavior
-      // based on the kit_ordered flag.
-      const intervalOnlyMatch = text.match(/^(\d+)HR$/i)
-      if (intervalOnlyMatch) {
-        const forcedLabel = `${intervalOnlyMatch[1]}HR`
-        if (unit.kit_ordered === true) {
-          return {
-            status: 'kit',
-            intervalLabel: forcedLabel,
-            hoursToNext,
-            primary: forcedLabel,
-            secondary: '',
-          }
-        }
+      // Legacy row without svc_done_at_hours → preserve always-show behavior
+      return {
+        status: 'done',
+        intervalLabel: doneLabel,
+        hoursToNext: null,
+        primary: doneLabel,
+        secondary: '',
+      }
+    }
+
+    // Plain interval override (e.g. "500HR", "1000HR") — use the override
+    // as the forced interval label but still honor kit/order-kit behavior
+    // based on the kit_ordered flag.
+    const intervalOnlyMatch = text.match(/^(\d+)HR$/i)
+    if (intervalOnlyMatch) {
+      const forcedLabel = `${intervalOnlyMatch[1]}HR`
+      if (unit.kit_ordered === true) {
         return {
-          status: 'due',
+          status: 'kit',
           intervalLabel: forcedLabel,
           hoursToNext,
           primary: forcedLabel,
-          secondary: 'order kit',
+          secondary: '',
         }
       }
-
-      // Custom text override (e.g. "Oil change", "CHECK SERVICE")
       return {
-        status: 'override',
-        intervalLabel: text,
-        hoursToNext: null,
-        primary: text,
-        secondary: '',
+        status: 'due',
+        intervalLabel: forcedLabel,
+        hoursToNext,
+        primary: forcedLabel,
+        secondary: 'order kit',
       }
+    }
+
+    // Custom text override (e.g. "Oil change", "CHECK SERVICE")
+    return {
+      status: 'override',
+      intervalLabel: text,
+      hoursToNext: null,
+      primary: text,
+      secondary: '',
     }
   }
 
