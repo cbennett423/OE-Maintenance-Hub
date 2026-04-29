@@ -58,6 +58,7 @@ export function useWorkOrders(filters = {}) {
         status: 'open',
         priority: data.priority || 'medium',
         assigned_mechanic: data.assigned_mechanic || null,
+        assigned_mechanic_id: data.assigned_mechanic_id || null,
         parts_needed: data.parts_needed || null,
         cost: data.cost != null && data.cost !== '' ? Number(data.cost) : null,
         notes: data.notes || null,

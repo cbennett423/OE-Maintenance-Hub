@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase CLI local cache (contains project ref + credentials)
+supabase/.temp/
+supabase/.branches/

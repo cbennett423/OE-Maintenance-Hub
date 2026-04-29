@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import Modal from '../ui/Modal'
+import { useMechanics } from '../../hooks/useMechanics'
 
 const PRIORITIES = ['low', 'medium', 'high', 'critical']
-const MECHANICS = ['Tim', 'Mechanic 2', 'Mechanic 3']
 
 export default function CreateWOModal({
   isOpen,
@@ -11,6 +11,7 @@ export default function CreateWOModal({
   equipment = [],
   preselectedUnit = null,
 }) {
+  const { mechanics } = useMechanics()
   const [form, setForm] = useState(() => getDefaults(preselectedUnit))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -22,6 +23,7 @@ export default function CreateWOModal({
       description: '',
       priority: 'medium',
       assigned_mechanic: '',
+      assigned_mechanic_id: '',
       parts_needed: '',
       cost: '',
       notes: '',
@@ -39,6 +41,15 @@ export default function CreateWOModal({
       if (field === 'equipment_id') {
         const unit = equipment.find((u) => u.id === value)
         return { ...f, equipment_id: value, equipment_label: unit?.label || '' }
+      }
+      if (field === 'assigned_mechanic_id') {
+        // Keep the legacy text column in sync until callers migrate to id-only.
+        const m = mechanics.find((mech) => mech.id === value)
+        return {
+          ...f,
+          assigned_mechanic_id: value,
+          assigned_mechanic: m?.name || '',
+        }
       }
       return { ...f, [field]: value }
     })
@@ -140,14 +151,14 @@ export default function CreateWOModal({
 
         <Field label="Assigned Mechanic">
           <select
-            value={form.assigned_mechanic}
-            onChange={(e) => update('assigned_mechanic', e.target.value)}
+            value={form.assigned_mechanic_id}
+            onChange={(e) => update('assigned_mechanic_id', e.target.value)}
             className="w-full input-dark"
           >
             <option value="">Unassigned</option>
-            {MECHANICS.map((m) => (
-              <option key={m} value={m}>
-                {m}
+            {mechanics.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
               </option>
             ))}
           </select>

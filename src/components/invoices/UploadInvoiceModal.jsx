@@ -3,6 +3,7 @@ import { Upload, FileText, X } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
 import { parseInvoicePdf, preloadInvoicePdfParser } from '../../lib/parseInvoicePdf'
+import { agentExtractInvoices } from '../../lib/invoiceIntakeAgent'
 
 const BUCKET = 'equipment-files'
 
@@ -26,9 +27,13 @@ function emptyRow(seed = {}) {
     invoice_date: seed.invoiceDate || '',
     mpw_wo_number: '',
     equipment_id: '',
-    total_amount: '',
+    total_amount: seed.totalAmount != null ? String(seed.totalAmount) : '',
     description: '',
     notes: '',
+    // po_raw is captured from the agent so the next step (po-matcher
+    // confirmation UI) can suggest an equipment match. Not user-editable
+    // in this modal — it's the vendor's PO field, kept verbatim.
+    po_raw: seed.poRaw || null,
   }
 }
 
@@ -43,6 +48,7 @@ export default function UploadInvoiceModal({
   const [pdf, setPdf] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [parsing, setParsing] = useState(false)
+  const [parseSource, setParseSource] = useState(null) // 'regex' | 'agent' | null
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [vendor, setVendor] = useState('Caterpillar')
@@ -61,6 +67,7 @@ export default function UploadInvoiceModal({
       setRows([])
       setVendor('Caterpillar')
       setError(null)
+      setParseSource(null)
       // Warm pdfjs (~1MB) while the user is still picking a file
       preloadInvoicePdfParser()
     }
@@ -80,6 +87,7 @@ export default function UploadInvoiceModal({
     if (!file) return
     setUploading(true)
     setParsing(true)
+    setParseSource(null)
     setError(null)
     const safeName = file.name.replace(/[^\w.\-]/g, '_')
     const path = `invoices/${invoiceId}/${Date.now()}_${safeName}`
@@ -96,23 +104,35 @@ export default function UploadInvoiceModal({
       setPdf({ name: file.name, url: data.publicUrl, path, size: file.size })
     })().finally(() => setUploading(false))
 
+    // Parse path:
+    //   1. Wagner-only regex (free, instant). If it returns 1+ invoices, use it.
+    //   2. invoice-intake Edge Function (Claude Opus 4.7 + vision) as fallback
+    //      for any other vendor or non-regex-matching layout.
+    //   3. Silent fallback to manual entry if both fail.
     const parseTask = (async () => {
-      const parsed = await parseInvoicePdf(file)
-      if (parsed.length >= 2) {
-        setRows(parsed.map(emptyRow))
-      } else if (parsed.length === 1) {
-        setForm((f) => ({
-          ...f,
-          invoice_number: parsed[0].invoiceNumber || f.invoice_number,
-          invoice_date: parsed[0].invoiceDate || f.invoice_date,
-        }))
+      let parsed = []
+      try {
+        parsed = await parseInvoicePdf(file)
+      } catch {
+        parsed = []
       }
-      // parsed.length === 0 → silent fallback to manual entry
-    })()
-      .catch(() => {
-        // Swallow — user can still type manually
-      })
-      .finally(() => setParsing(false))
+      if (parsed.length > 0) {
+        applyParsedInvoices(parsed)
+        setParseSource('regex')
+        return
+      }
+      // Regex didn't recognize it — try the agent.
+      try {
+        const agentParsed = await agentExtractInvoices(file)
+        if (agentParsed.length > 0) {
+          applyParsedInvoices(agentParsed)
+          setParseSource('agent')
+        }
+      } catch (err) {
+        console.warn('[invoice-intake] agent fallback failed', err)
+        // Silent — user can still type manually.
+      }
+    })().finally(() => setParsing(false))
 
     try {
       await uploadTask
@@ -121,6 +141,29 @@ export default function UploadInvoiceModal({
     }
     // Don't block on parseTask — it updates state on its own when done.
     parseTask
+  }
+
+  // Map a parsed invoice list (from either parser) onto form / rows.
+  // Both sources expose the camelCase shape: { invoiceNumber, invoiceDate,
+  // vendor?, totalAmount?, poRaw? }. The agent provides the extra fields;
+  // the regex parser leaves them undefined.
+  function applyParsedInvoices(parsed) {
+    if (parsed.length >= 2) {
+      setRows(parsed.map((p) => emptyRow(p)))
+      // Bubble up vendor from the first invoice if the agent identified one
+      // (multi-row UI applies one vendor to all rows).
+      if (parsed[0]?.vendor) setVendor(parsed[0].vendor)
+    } else if (parsed.length === 1) {
+      const p = parsed[0]
+      setForm((f) => ({
+        ...f,
+        invoice_number: p.invoiceNumber || f.invoice_number,
+        invoice_date: p.invoiceDate || f.invoice_date,
+        vendor: p.vendor || f.vendor,
+        total_amount:
+          p.totalAmount != null ? String(p.totalAmount) : f.total_amount,
+      }))
+    }
   }
 
   async function handleRemovePdf() {
@@ -281,6 +324,11 @@ export default function UploadInvoiceModal({
           )}
           {parsing && (
             <p className="text-[11px] text-muted mt-1">Reading invoice data from PDF…</p>
+          )}
+          {!parsing && parseSource === 'agent' && (
+            <p className="text-[11px] text-muted mt-1">
+              Extracted with AI assist (vendor not auto-recognized).
+            </p>
           )}
         </div>
 
