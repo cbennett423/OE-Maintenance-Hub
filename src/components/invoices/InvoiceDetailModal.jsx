@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { FileText, Trash2, CheckCircle2, RotateCcw } from 'lucide-react'
+import { FileText, Trash2, CheckCircle2, RotateCcw, Clock, Info } from 'lucide-react'
 import Modal from '../ui/Modal'
 import InvoiceStatusBadge from './InvoiceStatusBadge'
+import { getHoursForEquipmentOnDate } from '../../lib/equipmentHours'
 
 export default function InvoiceDetailModal({
   invoice,
@@ -18,6 +19,10 @@ export default function InvoiceDetailModal({
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState(null)
+  // Hours-on-invoice-date lookup result. null = not yet looked up;
+  // { hours, recorded_date, source } = found; { not_found: true } = no data.
+  const [hoursLookup, setHoursLookup] = useState(null)
+  const [hoursLooking, setHoursLooking] = useState(false)
 
   useEffect(() => {
     if (invoice) {
@@ -33,8 +38,25 @@ export default function InvoiceDetailModal({
       })
       setError(null)
       setConfirmDelete(false)
+      setHoursLookup(null)
     }
   }, [invoice])
+
+  // Look up the unit's recorded SMU hours on the invoice date when both
+  // the equipment and the invoice date are present.
+  async function lookupHours() {
+    if (!form.equipment_id || !form.invoice_date) return
+    setHoursLooking(true)
+    try {
+      const result = await getHoursForEquipmentOnDate(
+        form.equipment_id,
+        form.invoice_date
+      )
+      setHoursLookup(result || { not_found: true })
+    } finally {
+      setHoursLooking(false)
+    }
+  }
 
   if (!invoice) return null
 
@@ -275,6 +297,66 @@ export default function InvoiceDetailModal({
         </Field>
       </div>
 
+      {/* PO captured by the agent — show only if present. Read-only:
+          the alias is already written when the user saved the invoice. */}
+      {invoice.po_raw && (
+        <div className="mt-5 pt-4 border-t border-border">
+          <p className="text-[11px] font-display uppercase tracking-wider text-muted mb-1">
+            PO on invoice
+          </p>
+          <p className="text-sm text-text-dim font-mono">{invoice.po_raw}</p>
+        </div>
+      )}
+
+      {/* Hours-on-date lookup — interim feature while VisionLink API
+          access is pending. Pulls from the equipment_hours_history
+          ingested via the utilization-report importer. */}
+      {form.equipment_id && form.invoice_date && (
+        <div className="mt-4 pt-4 border-t border-border">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-1.5">
+              <Clock size={13} className="text-muted" />
+              <p className="text-[11px] font-display uppercase tracking-wider text-muted">
+                Machine hours on {form.invoice_date}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={lookupHours}
+              disabled={hoursLooking}
+              className="px-2 py-0.5 text-[10px] font-display font-bold uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors disabled:opacity-50"
+            >
+              {hoursLooking ? 'Looking…' : 'Look up'}
+            </button>
+          </div>
+          {hoursLookup && !hoursLookup.not_found && (
+            <p className="text-sm text-text-dim">
+              <span className="font-mono text-text">{hoursLookup.hours}</span>{' '}
+              hrs <span className="text-muted">(recorded {hoursLookup.recorded_date}, source: {hoursLookup.source})</span>
+            </p>
+          )}
+          {hoursLookup?.not_found && (
+            <p className="text-xs text-muted">
+              No reading on file for this unit on or before {form.invoice_date}. Import a utilization report on the Reports page.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* AI-extracted line items + explanations. */}
+      {Array.isArray(invoice.line_items) && invoice.line_items.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-border">
+          <p className="text-[11px] font-display uppercase tracking-wider text-muted mb-2">
+            Line items <span className="text-muted/60">— extracted by AI</span>
+          </p>
+          <div className="space-y-2">
+            {invoice.line_items.map((item, i) => (
+              <LineItemRow key={i} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mt-4 text-svc-red text-sm bg-svc-red/10 border border-svc-red/30 rounded px-3 py-2">
           {error}
@@ -289,6 +371,44 @@ function MetaItem({ label, value, mono }) {
     <div>
       <p className="text-muted font-display uppercase tracking-wider">{label}</p>
       <p className={`text-text-dim mt-0.5 ${mono ? 'font-mono' : ''}`}>{value}</p>
+    </div>
+  )
+}
+
+// Single row in the AI-extracted line items list. Shows part number +
+// description on the top line, with the AI-generated explanation below
+// when present.
+function LineItemRow({ item }) {
+  const qty = item.qty != null ? `×${item.qty}` : null
+  const total = item.line_total != null ? `$${Number(item.line_total).toFixed(2)}` : null
+  return (
+    <div className="bg-black-soft border border-border rounded px-3 py-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            {item.part_number && (
+              <span className="font-mono text-xs text-cat-yellow">
+                {item.part_number}
+              </span>
+            )}
+            <span className="text-sm text-text-dim">
+              {item.description || '—'}
+            </span>
+            {qty && <span className="text-[11px] text-muted">{qty}</span>}
+          </div>
+          {item.explanation && (
+            <p className="text-[11px] text-muted mt-1 flex items-start gap-1">
+              <Info size={10} className="mt-0.5 shrink-0" />
+              <span>{item.explanation}</span>
+            </p>
+          )}
+        </div>
+        {total && (
+          <span className="text-sm text-text-dim font-mono shrink-0">
+            {total}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Upload, Check, Download, Table } from 'lucide-react'
+import { FileText, Upload, Check, Download, Table, Clock } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import { useEquipment } from '../hooks/useEquipment'
 import { useTrucks } from '../hooks/useTrucks'
@@ -10,6 +10,8 @@ import { generateTelematicsSpreadsheet } from '../lib/generateTelematicsSpreadsh
 import { useAuth } from '../context/AuthContext'
 import { writeAuditLog } from '../lib/auditLog'
 import { parseVisionLinkExport, parseSamsaraExport, matchVisionLinkToEquipment, matchSamsaraToTrucks } from '../lib/parseTelematics'
+import { parseUtilizationReport } from '../lib/parseUtilizationReport'
+import { upsertHoursReadings, getHoursCoverage } from '../lib/equipmentHours'
 import ImportPreview from '../components/reports/ImportPreview'
 
 
@@ -234,6 +236,214 @@ export default function Reports() {
         </div>
       )}
 
+      {/* Utilization-report import — interim machine-hours-by-date feed
+          while VisionLink API access is pending. */}
+      <SectionHeader title="Import VisionLink Utilization Report" />
+      <UtilizationImportCard equipment={equipment} userEmail={user?.email} />
+
+    </div>
+  )
+}
+
+function UtilizationImportCard({ equipment, userEmail }) {
+  const [equipmentId, setEquipmentId] = useState('')
+  const [parsedRows, setParsedRows] = useState(null)
+  const [parseMeta, setParseMeta] = useState(null)
+  const [coverage, setCoverage] = useState(null)
+  const [parseErr, setParseErr] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [imported, setImported] = useState(null)
+
+  async function handleEquipmentChange(id) {
+    setEquipmentId(id)
+    setCoverage(null)
+    if (id) {
+      const cov = await getHoursCoverage(id)
+      setCoverage(cov)
+    }
+  }
+
+  async function handleFile(file) {
+    if (!file) return
+    setParseErr(null)
+    setImported(null)
+    try {
+      const result = await parseUtilizationReport(file)
+      if (result.rows.length === 0) {
+        setParseErr(
+          'No usable rows in file. Need a date column and an SMU/hours column.'
+        )
+        return
+      }
+      setParsedRows(result.rows)
+      setParseMeta({
+        dateCol: result.dateCol,
+        hoursCol: result.hoursCol,
+        serialCol: result.serialCol,
+        total: result.rows.length,
+        firstDate: result.rows[0]?.date,
+        lastDate: result.rows[result.rows.length - 1]?.date,
+      })
+    } catch (err) {
+      setParseErr('Failed to parse file: ' + err.message)
+    }
+  }
+
+  async function handleApply() {
+    if (!equipmentId) {
+      setParseErr('Pick which piece of equipment this report is for.')
+      return
+    }
+    if (!parsedRows || parsedRows.length === 0) return
+    setImporting(true)
+    try {
+      const payload = parsedRows.map((r) => ({
+        equipment_id: equipmentId,
+        recorded_date: r.date,
+        hours: r.hours,
+        source: 'utilization_report',
+        created_by: userEmail || null,
+      }))
+      const { count, error } = await upsertHoursReadings(payload, {
+        created_by: userEmail || null,
+      })
+      if (error) {
+        setParseErr('Import failed: ' + error.message)
+        return
+      }
+      const unit = equipment.find((e) => e.id === equipmentId)
+      await writeAuditLog({
+        unitLabel: unit?.label || equipmentId,
+        changeType: 'utilization_report_imported',
+        field: 'equipment_hours_history',
+        oldValue: null,
+        newValue: `${count} readings imported (${parseMeta.firstDate} → ${parseMeta.lastDate})`,
+        changedBy: userEmail || 'unknown',
+      })
+      setImported({ count, firstDate: parseMeta.firstDate, lastDate: parseMeta.lastDate })
+      setParsedRows(null)
+      setParseMeta(null)
+      // Refresh coverage so the user sees the updated window.
+      const cov = await getHoursCoverage(equipmentId)
+      setCoverage(cov)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function handleCancel() {
+    setParsedRows(null)
+    setParseMeta(null)
+    setParseErr(null)
+  }
+
+  const unit = equipment.find((e) => e.id === equipmentId)
+
+  return (
+    <div className="bg-black-card border border-border rounded-lg p-5 mb-6">
+      <div className="flex items-start gap-3 mb-4">
+        <Clock size={20} className="text-cat-yellow mt-0.5 shrink-0" />
+        <div>
+          <h3 className="font-display text-base font-bold uppercase tracking-wider text-text">
+            Daily SMU Hours by Unit
+          </h3>
+          <p className="text-sm text-muted mt-1">
+            Upload a VisionLink utilization report (xlsx) for one machine. Daily readings go into <span className="font-mono text-text-dim">equipment_hours_history</span> so closeouts can pre-fill machine hours from the invoice date.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+        <div>
+          <label className="block text-xs font-display font-semibold uppercase tracking-wider text-muted mb-1">
+            Equipment
+          </label>
+          <select
+            value={equipmentId}
+            onChange={(e) => handleEquipmentChange(e.target.value)}
+            className="w-full input-dark"
+          >
+            <option value="">Pick the unit this report covers…</option>
+            {equipment.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.label}
+                {u.serial ? ` — SN ${u.serial}` : ''}
+              </option>
+            ))}
+          </select>
+          {coverage && coverage.count > 0 && (
+            <p className="text-[11px] text-muted mt-1">
+              {coverage.count} readings on file ({coverage.earliest_date} → {coverage.latest_date})
+            </p>
+          )}
+          {coverage && coverage.count === 0 && (
+            <p className="text-[11px] text-muted mt-1">
+              No readings on file for this unit yet.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-display font-semibold uppercase tracking-wider text-muted mb-1">
+            Report file
+          </label>
+          <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-cat-yellow/50 transition-colors">
+            <Upload size={16} className="text-muted" />
+            <span className="text-sm text-muted">.xlsx / .xls / .csv</span>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => handleFile(e.target.files[0])}
+              className="hidden"
+            />
+          </label>
+        </div>
+      </div>
+
+      {parseErr && (
+        <div className="text-svc-red text-sm bg-svc-red/10 border border-svc-red/30 rounded px-3 py-2 mb-3">
+          {parseErr}
+        </div>
+      )}
+
+      {parsedRows && parseMeta && (
+        <div className="border border-border rounded p-3 bg-black-soft mb-3">
+          <p className="text-xs text-text-dim mb-1">
+            <span className="font-display font-bold uppercase tracking-wider text-text">
+              Preview
+            </span>{' '}
+            — detected <span className="font-mono">{parseMeta.dateCol}</span> as date,{' '}
+            <span className="font-mono">{parseMeta.hoursCol}</span> as hours.
+          </p>
+          <p className="text-xs text-muted">
+            {parseMeta.total} readings, {parseMeta.firstDate} → {parseMeta.lastDate}
+            {unit ? ` — for unit ${unit.label}` : ''}
+          </p>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={handleApply}
+              disabled={importing || !equipmentId}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors disabled:opacity-50"
+            >
+              <Check size={12} />
+              {importing ? 'Importing…' : `Import ${parseMeta.total} readings`}
+            </button>
+            <button
+              onClick={handleCancel}
+              disabled={importing}
+              className="px-3 py-1.5 text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-text rounded transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {imported && (
+        <div className="text-svc-green text-sm bg-svc-green/10 border border-svc-green/30 rounded px-3 py-2">
+          Imported {imported.count} readings ({imported.firstDate} → {imported.lastDate}).
+        </div>
+      )}
     </div>
   )
 }

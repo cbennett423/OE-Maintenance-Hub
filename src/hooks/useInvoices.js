@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { writeAuditLog, diffForAuditLog, writeAuditLogBatch } from '../lib/auditLog'
+import { writeAliasFromConfirmedMatch } from '../lib/poMatcher'
 
 function invoiceLabel(row) {
   return row?.invoice_number || (row?.id ? `Invoice-${String(row.id).slice(0, 8)}` : 'Invoice')
@@ -58,6 +59,8 @@ export function useInvoices() {
         description: data.description || null,
         notes: data.notes || null,
         date_closed: null,
+        po_raw: data.po_raw || null,
+        line_items: Array.isArray(data.line_items) ? data.line_items : [],
         created_at: now,
         updated_at: now,
       }
@@ -73,6 +76,19 @@ export function useInvoices() {
         newValue: row.invoice_number || row.vendor,
         changedBy: user?.email || 'unknown',
       })
+
+      // Teach the PO matcher whenever the user saved an invoice with both a
+      // PO and an equipment_id — they've effectively confirmed the mapping
+      // (whether by accepting the auto-fill or picking manually).
+      if (row.po_raw && row.equipment_id) {
+        await writeAliasFromConfirmedMatch({
+          po_raw: row.po_raw,
+          equipment_id: row.equipment_id,
+          vendor: row.vendor,
+          source: 'confirmed_match',
+          created_by: user?.email || null,
+        })
+      }
 
       await fetchInvoices()
       return { error: null, id }

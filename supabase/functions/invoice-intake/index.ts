@@ -38,9 +38,17 @@ For each invoice in the PDF, return:
 - vendor — the company that issued the invoice
 - invoice_number — the unique invoice identifier printed on the document. If both a "raw" invoice number and a customer-facing number (PSO/WO#) are present, return the raw invoice number here.
 - invoice_date — ISO 8601 date (YYYY-MM-DD)
-- po_raw — the PO / customer reference exactly as printed. Do not normalize.
+- po_raw — the PO / customer reference exactly as printed. Do not normalize. This is the field the customer (the maintenance shop) wrote on the order — usually their internal unit/equipment number, but format varies (e.g. "225", "CAT-225D", "Unit 225").
 - total_amount — number, in USD. Strip currency symbols and commas.
-- line_items — array of { description, qty, unit_price, line_total }. If line items aren't reliably parseable, return [] and set line_items_unparsed: true.
+- line_items — array of one object per line on the invoice. Each line:
+    - part_number — the vendor's part number / SKU, exactly as printed (e.g. "1R-1808"). null if the line is labor or has no part number.
+    - description — the description as printed on the invoice.
+    - qty — number, the quantity ordered.
+    - unit_price — number.
+    - line_total — number.
+    - explanation — ONE short sentence (≤25 words) explaining what this part is and what it's for, written for a heavy-equipment mechanic. Examples: "Engine oil filter for C-series engines — replace at every PM service." or "Bucket pin retainer bolt — secures the bucket pin against the boom side."
+                    For labor lines, briefly describe the labor type. If you genuinely don't know what the part is, set explanation to null — do NOT guess.
+  If line items aren't reliably parseable, return [] and set line_items_unparsed: true.
 - page_range — [start, end] 1-indexed page numbers in the source PDF where this invoice appears.
 - confidence — number 0–1, your confidence in the extraction.
 

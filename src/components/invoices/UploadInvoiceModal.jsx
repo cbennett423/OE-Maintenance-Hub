@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
-import { Upload, FileText, X } from 'lucide-react'
+import { Upload, FileText, X, Sparkles, Check } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
-import { parseInvoicePdf, preloadInvoicePdfParser } from '../../lib/parseInvoicePdf'
 import { agentExtractInvoices } from '../../lib/invoiceIntakeAgent'
+import {
+  matchPo,
+  fetchAliasesForVendor,
+  PO_MATCH_AUTO_THRESHOLD,
+} from '../../lib/poMatcher'
 
 const BUCKET = 'equipment-files'
 
+// Single-invoice form shape. po_raw + line_items are populated by the
+// invoice-intake agent and persisted to the invoices row on save.
 function emptyForm() {
   return {
     invoice_number: '',
@@ -17,6 +23,9 @@ function emptyForm() {
     equipment_id: '',
     description: '',
     notes: '',
+    po_raw: null,
+    line_items: [],
+    match: null, // { equipment_id, confidence, source, reasoning }
   }
 }
 
@@ -30,10 +39,9 @@ function emptyRow(seed = {}) {
     total_amount: seed.totalAmount != null ? String(seed.totalAmount) : '',
     description: '',
     notes: '',
-    // po_raw is captured from the agent so the next step (po-matcher
-    // confirmation UI) can suggest an equipment match. Not user-editable
-    // in this modal — it's the vendor's PO field, kept verbatim.
     po_raw: seed.poRaw || null,
+    line_items: seed.lineItems || [],
+    match: null,
   }
 }
 
@@ -43,20 +51,16 @@ export default function UploadInvoiceModal({
   onCreate,
   equipment = [],
 }) {
-  // Shared state
   const [invoiceId, setInvoiceId] = useState(() => crypto.randomUUID())
   const [pdf, setPdf] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [parsing, setParsing] = useState(false)
-  const [parseSource, setParseSource] = useState(null) // 'regex' | 'agent' | null
+  const [matching, setMatching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [vendor, setVendor] = useState('Caterpillar')
 
-  // Single-invoice mode state
   const [form, setForm] = useState(emptyForm())
-
-  // Multi-invoice mode state (rows > 1 means multi-mode UI)
   const [rows, setRows] = useState([])
 
   useEffect(() => {
@@ -67,9 +71,6 @@ export default function UploadInvoiceModal({
       setRows([])
       setVendor('Caterpillar')
       setError(null)
-      setParseSource(null)
-      // Warm pdfjs (~1MB) while the user is still picking a file
-      preloadInvoicePdfParser()
     }
   }, [isOpen])
 
@@ -87,14 +88,11 @@ export default function UploadInvoiceModal({
     if (!file) return
     setUploading(true)
     setParsing(true)
-    setParseSource(null)
     setError(null)
     const safeName = file.name.replace(/[^\w.\-]/g, '_')
     const path = `invoices/${invoiceId}/${Date.now()}_${safeName}`
 
-    // Upload and parse concurrently — they're independent, so no reason
-    // to make the user wait for the network round-trip before extracting
-    // fields (or vice-versa).
+    // Upload and parse concurrently — they're independent.
     const uploadTask = (async () => {
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
@@ -104,32 +102,18 @@ export default function UploadInvoiceModal({
       setPdf({ name: file.name, url: data.publicUrl, path, size: file.size })
     })().finally(() => setUploading(false))
 
-    // Parse path:
-    //   1. Wagner-only regex (free, instant). If it returns 1+ invoices, use it.
-    //   2. invoice-intake Edge Function (Claude Opus 4.7 + vision) as fallback
-    //      for any other vendor or non-regex-matching layout.
-    //   3. Silent fallback to manual entry if both fail.
+    // Always run the AI agent — Wagner is the dominant case and the agent
+    // is the only path that captures po_raw + line_items + explanations.
+    // The Wagner regex parser stays in the repo for reference but is no
+    // longer in the upload path.
     const parseTask = (async () => {
-      let parsed = []
       try {
-        parsed = await parseInvoicePdf(file)
-      } catch {
-        parsed = []
-      }
-      if (parsed.length > 0) {
-        applyParsedInvoices(parsed)
-        setParseSource('regex')
-        return
-      }
-      // Regex didn't recognize it — try the agent.
-      try {
-        const agentParsed = await agentExtractInvoices(file)
-        if (agentParsed.length > 0) {
-          applyParsedInvoices(agentParsed)
-          setParseSource('agent')
+        const parsed = await agentExtractInvoices(file)
+        if (parsed.length > 0) {
+          await applyParsedInvoices(parsed)
         }
       } catch (err) {
-        console.warn('[invoice-intake] agent fallback failed', err)
+        console.warn('[invoice-intake] extraction failed', err)
         // Silent — user can still type manually.
       }
     })().finally(() => setParsing(false))
@@ -139,20 +123,17 @@ export default function UploadInvoiceModal({
     } catch (err) {
       setError(err.message || 'Upload failed')
     }
-    // Don't block on parseTask — it updates state on its own when done.
     parseTask
   }
 
-  // Map a parsed invoice list (from either parser) onto form / rows.
-  // Both sources expose the camelCase shape: { invoiceNumber, invoiceDate,
-  // vendor?, totalAmount?, poRaw? }. The agent provides the extra fields;
-  // the regex parser leaves them undefined.
-  function applyParsedInvoices(parsed) {
+  // Apply parsed invoices to form/rows, then run po-matcher to suggest
+  // equipment for each.
+  async function applyParsedInvoices(parsed) {
     if (parsed.length >= 2) {
-      setRows(parsed.map((p) => emptyRow(p)))
-      // Bubble up vendor from the first invoice if the agent identified one
-      // (multi-row UI applies one vendor to all rows).
+      const newRows = parsed.map((p) => emptyRow(p))
+      setRows(newRows)
       if (parsed[0]?.vendor) setVendor(parsed[0].vendor)
+      runMatchersForRows(newRows, parsed[0]?.vendor)
     } else if (parsed.length === 1) {
       const p = parsed[0]
       setForm((f) => ({
@@ -162,8 +143,94 @@ export default function UploadInvoiceModal({
         vendor: p.vendor || f.vendor,
         total_amount:
           p.totalAmount != null ? String(p.totalAmount) : f.total_amount,
+        po_raw: p.poRaw || null,
+        line_items: p.lineItems || [],
       }))
+      runMatcherForSingle(p.poRaw, p.vendor)
     }
+  }
+
+  async function runMatcherForSingle(po_raw, vendorHint) {
+    if (!po_raw) return
+    setMatching(true)
+    try {
+      const aliases = await fetchAliasesForVendor(vendorHint)
+      const result = await matchPo({
+        po_raw,
+        vendor: vendorHint,
+        equipment,
+        aliases,
+      })
+      if (!result || !result.equipment_id) {
+        setForm((f) => ({ ...f, match: result || null }))
+        return
+      }
+      setForm((f) => ({
+        ...f,
+        match: result,
+        // Auto-fill equipment when confidence is high enough.
+        equipment_id:
+          result.confidence >= PO_MATCH_AUTO_THRESHOLD && !f.equipment_id
+            ? result.equipment_id
+            : f.equipment_id,
+      }))
+    } finally {
+      setMatching(false)
+    }
+  }
+
+  async function runMatchersForRows(seedRows, vendorHint) {
+    setMatching(true)
+    try {
+      const aliases = await fetchAliasesForVendor(vendorHint)
+      // Run sequentially to keep order deterministic and to avoid spamming
+      // the Edge Function. Each match is fast (<1s for tier 1/2, ~3s for LLM).
+      for (let i = 0; i < seedRows.length; i++) {
+        const seed = seedRows[i]
+        if (!seed.po_raw) continue
+        const result = await matchPo({
+          po_raw: seed.po_raw,
+          vendor: vendorHint,
+          equipment,
+          aliases,
+        })
+        setRows((rs) =>
+          rs.map((r, idx) => {
+            if (idx !== i) return r
+            const autofill =
+              result?.equipment_id &&
+              result.confidence >= PO_MATCH_AUTO_THRESHOLD &&
+              !r.equipment_id
+            return {
+              ...r,
+              match: result || null,
+              equipment_id: autofill ? result.equipment_id : r.equipment_id,
+            }
+          })
+        )
+      }
+    } finally {
+      setMatching(false)
+    }
+  }
+
+  // User accepts the suggested match below the auto-threshold.
+  function acceptSuggestion() {
+    setForm((f) =>
+      f.match?.equipment_id
+        ? { ...f, equipment_id: f.match.equipment_id }
+        : f
+    )
+  }
+
+  function acceptRowSuggestion(i) {
+    setRows((rs) =>
+      rs.map((r, idx) =>
+        idx === i && r.match?.equipment_id
+          ? { ...r, equipment_id: r.match.equipment_id }
+          : r
+      )
+    )
   }
 
   async function handleRemovePdf() {
@@ -201,6 +268,8 @@ export default function UploadInvoiceModal({
       notes: form.notes.trim() || null,
       pdf_url: pdf.url,
       pdf_path: pdf.path,
+      po_raw: form.po_raw || null,
+      line_items: form.line_items || [],
     })
     setSaving(false)
     if (result?.error) {
@@ -223,8 +292,6 @@ export default function UploadInvoiceModal({
     setSaving(true)
     setError(null)
     for (const row of selected) {
-      // All records share the same pdf_url/pdf_path. Each gets its own id
-      // generated inside createInvoice (we omit id here so the hook creates one).
       const result = await onCreate({
         invoice_number: row.invoice_number.trim() || null,
         invoice_date: row.invoice_date || null,
@@ -236,6 +303,8 @@ export default function UploadInvoiceModal({
         notes: row.notes.trim() || null,
         pdf_url: pdf.url,
         pdf_path: pdf.path,
+        po_raw: row.po_raw || null,
+        line_items: row.line_items || [],
       })
       if (result?.error) {
         setSaving(false)
@@ -323,11 +392,15 @@ export default function UploadInvoiceModal({
             </label>
           )}
           {parsing && (
-            <p className="text-[11px] text-muted mt-1">Reading invoice data from PDF…</p>
+            <p className="text-[11px] text-muted mt-1 flex items-center gap-1">
+              <Sparkles size={11} className="text-cat-yellow animate-pulse" />
+              Reading invoice with AI…
+            </p>
           )}
-          {!parsing && parseSource === 'agent' && (
-            <p className="text-[11px] text-muted mt-1">
-              Extracted with AI assist (vendor not auto-recognized).
+          {!parsing && matching && (
+            <p className="text-[11px] text-muted mt-1 flex items-center gap-1">
+              <Sparkles size={11} className="text-cat-yellow animate-pulse" />
+              Matching PO to equipment…
             </p>
           )}
         </div>
@@ -340,12 +413,14 @@ export default function UploadInvoiceModal({
             setVendor={setVendor}
             equipment={equipment}
             onRowChange={updateRow}
+            onAcceptSuggestion={acceptRowSuggestion}
           />
         ) : (
           <SingleInvoiceForm
             form={form}
             onChange={updateForm}
             equipment={equipment}
+            onAcceptSuggestion={acceptSuggestion}
           />
         )}
 
@@ -359,7 +434,7 @@ export default function UploadInvoiceModal({
   )
 }
 
-function SingleInvoiceForm({ form, onChange, equipment }) {
+function SingleInvoiceForm({ form, onChange, equipment, onAcceptSuggestion }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Field label="Invoice #">
@@ -424,6 +499,13 @@ function SingleInvoiceForm({ form, onChange, equipment }) {
             </option>
           ))}
         </select>
+        <MatchHint
+          match={form.match}
+          poRaw={form.po_raw}
+          equipment={equipment}
+          equipmentId={form.equipment_id}
+          onAccept={onAcceptSuggestion}
+        />
       </Field>
 
       <Field label="Description" span={2}>
@@ -448,7 +530,14 @@ function SingleInvoiceForm({ form, onChange, equipment }) {
   )
 }
 
-function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) {
+function MultiInvoiceTable({
+  rows,
+  vendor,
+  setVendor,
+  equipment,
+  onRowChange,
+  onAcceptSuggestion,
+}) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -484,7 +573,7 @@ function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) 
             <tbody>
               {rows.map((row, i) => (
                 <tr key={i} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 align-top">
                     <input
                       type="checkbox"
                       checked={row.selected}
@@ -492,7 +581,7 @@ function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) 
                       className="accent-cat-yellow"
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 align-top">
                     <input
                       type="text"
                       value={row.invoice_number}
@@ -500,7 +589,7 @@ function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) 
                       className="w-full input-dark font-mono text-xs py-1"
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 align-top">
                     <input
                       type="text"
                       value={row.description}
@@ -509,7 +598,7 @@ function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) 
                       className="w-full input-dark text-xs py-1"
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 align-top">
                     <input
                       type="date"
                       value={row.invoice_date}
@@ -517,7 +606,7 @@ function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) 
                       className="w-full input-dark text-xs py-1"
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 align-top">
                     <select
                       value={row.equipment_id}
                       onChange={(e) => onRowChange(i, 'equipment_id', e.target.value)}
@@ -530,8 +619,16 @@ function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) 
                         </option>
                       ))}
                     </select>
+                    <MatchHint
+                      match={row.match}
+                      poRaw={row.po_raw}
+                      equipment={equipment}
+                      equipmentId={row.equipment_id}
+                      onAccept={() => onAcceptSuggestion(i)}
+                      compact
+                    />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 align-top">
                     <input
                       type="number"
                       value={row.mpw_wo_number}
@@ -539,7 +636,7 @@ function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) 
                       className="w-full input-dark font-mono text-xs py-1"
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 align-top">
                     <input
                       type="number"
                       step="0.01"
@@ -555,6 +652,48 @@ function MultiInvoiceTable({ rows, vendor, setVendor, equipment, onRowChange }) 
           </table>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Renders the po-matcher result inline near the equipment dropdown:
+//   - High confidence + dropdown filled → "Auto-matched: PO 'X' → label (95%)"
+//   - Low/medium confidence + dropdown empty → "Suggested: label (60%) [Use this]"
+//   - No match → nothing
+function MatchHint({ match, poRaw, equipment, equipmentId, onAccept, compact }) {
+  if (!match || !match.equipment_id) return null
+  const unit = equipment.find((u) => u.id === match.equipment_id)
+  if (!unit) return null
+  const pct = Math.round((match.confidence ?? 0) * 100)
+  const isFilled = equipmentId === match.equipment_id
+  const cls = compact ? 'text-[10px] mt-1' : 'text-[11px] mt-1.5'
+
+  if (isFilled) {
+    return (
+      <p className={`${cls} text-svc-green flex items-center gap-1`}>
+        <Check size={10} />
+        {match.source === 'alias'
+          ? `Matched alias`
+          : match.source === 'normalized'
+            ? `Auto-matched`
+            : `AI-matched`}
+        : "{poRaw}" → {unit.label} ({pct}%)
+      </p>
+    )
+  }
+
+  return (
+    <div className={`${cls} text-cat-yellow flex items-center gap-2`}>
+      <span>
+        Suggested: {unit.label} ({pct}%)
+      </span>
+      <button
+        type="button"
+        onClick={onAccept}
+        className="px-1.5 py-0.5 text-[10px] font-display font-bold uppercase tracking-wider border border-cat-yellow/50 text-cat-yellow rounded hover:bg-cat-yellow/10 transition-colors"
+      >
+        Use
+      </button>
     </div>
   )
 }
