@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Upload, FileText, X, Sparkles, Check } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Upload, FileText, X, Sparkles, Check, Scissors } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
 import { agentExtractInvoices } from '../../lib/invoiceIntakeAgent'
@@ -8,11 +8,14 @@ import {
   fetchAliasesForVendor,
   PO_MATCH_AUTO_THRESHOLD,
 } from '../../lib/poMatcher'
+import { extractPagesAsBlob, pageRangeCoversWholePdf } from '../../lib/splitPdf'
 
 const BUCKET = 'equipment-files'
 
 // Single-invoice form shape. po_raw + line_items are populated by the
 // invoice-intake agent and persisted to the invoices row on save.
+// pdf_url / pdf_path are optionally overridden when the agent reports
+// a sub-range (i.e. the PDF was bigger than just this invoice).
 function emptyForm() {
   return {
     invoice_number: '',
@@ -25,6 +28,9 @@ function emptyForm() {
     notes: '',
     po_raw: null,
     line_items: [],
+    page_range: null, // [start, end], 1-indexed
+    pdf_url: null, // split-pdf URL when present, else fall back to shared pdf
+    pdf_path: null,
     match: null, // { equipment_id, confidence, source, reasoning }
   }
 }
@@ -41,6 +47,9 @@ function emptyRow(seed = {}) {
     notes: '',
     po_raw: seed.poRaw || null,
     line_items: seed.lineItems || [],
+    page_range: seed.pageRange || null,
+    pdf_url: null,
+    pdf_path: null,
     match: null,
   }
 }
@@ -56,12 +65,20 @@ export default function UploadInvoiceModal({
   const [uploading, setUploading] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [matching, setMatching] = useState(false)
+  const [splitting, setSplitting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [vendor, setVendor] = useState('Caterpillar')
 
   const [form, setForm] = useState(emptyForm())
   const [rows, setRows] = useState([])
+
+  // Refs that don't need to drive re-renders. sourceFileRef holds the
+  // user-picked File while we run the agent + splitter; uploadedPathsRef
+  // tracks every storage object we've created in this session so we can
+  // clean them all up on cancel/replace.
+  const sourceFileRef = useRef(null)
+  const uploadedPathsRef = useRef([])
 
   useEffect(() => {
     if (isOpen) {
@@ -71,6 +88,8 @@ export default function UploadInvoiceModal({
       setRows([])
       setVendor('Caterpillar')
       setError(null)
+      sourceFileRef.current = null
+      uploadedPathsRef.current = []
     }
   }, [isOpen])
 
@@ -89,28 +108,33 @@ export default function UploadInvoiceModal({
     setUploading(true)
     setParsing(true)
     setError(null)
+    sourceFileRef.current = file
     const safeName = file.name.replace(/[^\w.\-]/g, '_')
     const path = `invoices/${invoiceId}/${Date.now()}_${safeName}`
 
-    // Upload and parse concurrently — they're independent.
+    // Upload original and run agent concurrently — they're independent.
     const uploadTask = (async () => {
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
         .upload(path, file, { upsert: false })
       if (upErr) throw upErr
+      uploadedPathsRef.current.push(path)
       const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
       setPdf({ name: file.name, url: data.publicUrl, path, size: file.size })
     })().finally(() => setUploading(false))
 
     // Always run the AI agent — Wagner is the dominant case and the agent
     // is the only path that captures po_raw + line_items + explanations.
-    // The Wagner regex parser stays in the repo for reference but is no
-    // longer in the upload path.
     const parseTask = (async () => {
       try {
         const parsed = await agentExtractInvoices(file)
         if (parsed.length > 0) {
-          await applyParsedInvoices(parsed)
+          // applyParsedInvoices fills the form/rows + kicks off po-matcher.
+          // splitAndUploadInvoices runs in parallel; each invoice gets its
+          // own single-page PDF so mechanics can attach the right one to
+          // its work order in MP Web without flipping through a batched PDF.
+          applyParsedInvoices(parsed)
+          splitAndUploadInvoices(file, parsed, safeName)
         }
       } catch (err) {
         console.warn('[invoice-intake] extraction failed', err)
@@ -124,6 +148,61 @@ export default function UploadInvoiceModal({
       setError(err.message || 'Upload failed')
     }
     parseTask
+  }
+
+  // Splits the source PDF into per-invoice PDFs based on each agent
+  // record's page_range. Each split is uploaded to storage and its URL is
+  // written back to the corresponding row (or form, in single mode). On
+  // failure the row falls back to the original PDF on save.
+  async function splitAndUploadInvoices(file, parsed, safeName) {
+    if (!file || !parsed || parsed.length === 0) return
+    // Single invoice that already covers the whole PDF → nothing to split.
+    if (parsed.length === 1 && parsed[0]?.pageRange) {
+      try {
+        const whole = await pageRangeCoversWholePdf(file, parsed[0].pageRange)
+        if (whole) return
+      } catch {
+        // Fall through and attempt a split; worst case we end up with a
+        // duplicate of the original.
+      }
+    }
+
+    setSplitting(true)
+    try {
+      for (let i = 0; i < parsed.length; i++) {
+        const p = parsed[i]
+        if (!p.pageRange) continue
+        const [start, end] = p.pageRange
+        let blob
+        try {
+          blob = await extractPagesAsBlob(file, start, end)
+        } catch (err) {
+          console.warn(`[splitPdf] extract failed for invoice ${i + 1}`, err)
+          continue
+        }
+        const path = `invoices/${invoiceId}/p${start}-${end}_${i}_${Date.now()}_${safeName}`
+        const { error: upErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, blob, { upsert: false, contentType: 'application/pdf' })
+        if (upErr) {
+          console.warn(`[splitPdf] upload failed for ${path}`, upErr)
+          continue
+        }
+        uploadedPathsRef.current.push(path)
+        const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
+        if (parsed.length >= 2) {
+          setRows((rs) =>
+            rs.map((r, idx) =>
+              idx === i ? { ...r, pdf_url: data.publicUrl, pdf_path: path } : r
+            )
+          )
+        } else {
+          setForm((f) => ({ ...f, pdf_url: data.publicUrl, pdf_path: path }))
+        }
+      }
+    } finally {
+      setSplitting(false)
+    }
   }
 
   // Apply parsed invoices to form/rows, then run po-matcher to suggest
@@ -145,6 +224,7 @@ export default function UploadInvoiceModal({
           p.totalAmount != null ? String(p.totalAmount) : f.total_amount,
         po_raw: p.poRaw || null,
         line_items: p.lineItems || [],
+        page_range: p.pageRange || null,
       }))
       runMatcherForSingle(p.poRaw, p.vendor)
     }
@@ -233,19 +313,26 @@ export default function UploadInvoiceModal({
     )
   }
 
-  async function handleRemovePdf() {
-    if (pdf?.path) {
-      await supabase.storage.from(BUCKET).remove([pdf.path]).catch(() => {})
+  // Remove every storage object we wrote in this session — original +
+  // any per-invoice splits — not just the original.
+  async function cleanupAllUploads() {
+    const paths = uploadedPathsRef.current
+    if (paths.length > 0) {
+      await supabase.storage.from(BUCKET).remove(paths).catch(() => {})
     }
+    uploadedPathsRef.current = []
+    sourceFileRef.current = null
+  }
+
+  async function handleRemovePdf() {
+    await cleanupAllUploads()
     setPdf(null)
     setRows([])
     setForm(emptyForm())
   }
 
   async function handleCancel() {
-    if (pdf?.path) {
-      await supabase.storage.from(BUCKET).remove([pdf.path]).catch(() => {})
-    }
+    await cleanupAllUploads()
     onClose?.()
   }
 
@@ -266,8 +353,9 @@ export default function UploadInvoiceModal({
       equipment_id: form.equipment_id || null,
       description: form.description.trim() || null,
       notes: form.notes.trim() || null,
-      pdf_url: pdf.url,
-      pdf_path: pdf.path,
+      // Prefer the agent-split single-invoice PDF; fall back to original.
+      pdf_url: form.pdf_url || pdf.url,
+      pdf_path: form.pdf_path || pdf.path,
       po_raw: form.po_raw || null,
       line_items: form.line_items || [],
     })
@@ -301,8 +389,10 @@ export default function UploadInvoiceModal({
         equipment_id: row.equipment_id || null,
         description: row.description.trim() || null,
         notes: row.notes.trim() || null,
-        pdf_url: pdf.url,
-        pdf_path: pdf.path,
+        // Prefer the per-invoice split PDF; fall back to the original
+        // batched PDF if splitting failed for this row.
+        pdf_url: row.pdf_url || pdf.url,
+        pdf_path: row.pdf_path || pdf.path,
         po_raw: row.po_raw || null,
         line_items: row.line_items || [],
       })
@@ -316,7 +406,7 @@ export default function UploadInvoiceModal({
     onClose?.()
   }
 
-  const saveDisabled = saving || uploading || parsing || !pdf
+  const saveDisabled = saving || uploading || parsing || splitting || !pdf
   const saveHandler = isMultiMode ? handleSaveMulti : handleSaveSingle
   const saveLabel = saving
     ? 'Saving…'
@@ -397,7 +487,13 @@ export default function UploadInvoiceModal({
               Reading invoice with AI…
             </p>
           )}
-          {!parsing && matching && (
+          {!parsing && splitting && (
+            <p className="text-[11px] text-muted mt-1 flex items-center gap-1">
+              <Scissors size={11} className="text-cat-yellow animate-pulse" />
+              Splitting PDF into per-invoice files…
+            </p>
+          )}
+          {!parsing && !splitting && matching && (
             <p className="text-[11px] text-muted mt-1 flex items-center gap-1">
               <Sparkles size={11} className="text-cat-yellow animate-pulse" />
               Matching PO to equipment…
