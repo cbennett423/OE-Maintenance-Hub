@@ -9,6 +9,7 @@ import {
   PO_MATCH_AUTO_THRESHOLD,
 } from '../../lib/poMatcher'
 import { extractPagesAsBlob, pageRangeCoversWholePdf } from '../../lib/splitPdf'
+import { standardizePo } from '../../lib/poFormat'
 
 const BUCKET = 'equipment-files'
 
@@ -22,7 +23,6 @@ function emptyForm() {
     invoice_date: new Date().toISOString().slice(0, 10),
     vendor: 'Caterpillar',
     total_amount: '',
-    mpw_wo_number: '',
     equipment_id: '',
     description: '',
     notes: '',
@@ -40,10 +40,11 @@ function emptyRow(seed = {}) {
     selected: true,
     invoice_number: seed.invoiceNumber || '',
     invoice_date: seed.invoiceDate || '',
-    mpw_wo_number: '',
     equipment_id: '',
     total_amount: seed.totalAmount != null ? String(seed.totalAmount) : '',
-    description: '',
+    // AI-suggested short description ("972 teeth", "hydraulic hose"); user
+    // can edit before save.
+    description: seed.shortDescription || '',
     notes: '',
     po_raw: seed.poRaw || null,
     line_items: seed.lineItems || [],
@@ -222,6 +223,9 @@ export default function UploadInvoiceModal({
         vendor: p.vendor || f.vendor,
         total_amount:
           p.totalAmount != null ? String(p.totalAmount) : f.total_amount,
+        // Only fill description if the user hasn't typed anything yet —
+        // never clobber user input.
+        description: f.description || p.shortDescription || '',
         po_raw: p.poRaw || null,
         line_items: p.lineItems || [],
         page_range: p.pageRange || null,
@@ -349,7 +353,6 @@ export default function UploadInvoiceModal({
       invoice_date: form.invoice_date || null,
       vendor: form.vendor.trim() || 'Caterpillar',
       total_amount: form.total_amount === '' ? null : Number(form.total_amount),
-      mpw_wo_number: form.mpw_wo_number === '' ? null : Number(form.mpw_wo_number),
       equipment_id: form.equipment_id || null,
       description: form.description.trim() || null,
       notes: form.notes.trim() || null,
@@ -385,7 +388,6 @@ export default function UploadInvoiceModal({
         invoice_date: row.invoice_date || null,
         vendor: vendor.trim() || 'Caterpillar',
         total_amount: row.total_amount === '' ? null : Number(row.total_amount),
-        mpw_wo_number: row.mpw_wo_number === '' ? null : Number(row.mpw_wo_number),
         equipment_id: row.equipment_id || null,
         description: row.description.trim() || null,
         notes: row.notes.trim() || null,
@@ -572,13 +574,14 @@ function SingleInvoiceForm({ form, onChange, equipment, onAcceptSuggestion }) {
         />
       </Field>
 
-      <Field label="MPW WO #">
+      <Field label="PO">
         <input
-          type="number"
-          value={form.mpw_wo_number}
-          onChange={(e) => onChange('mpw_wo_number', e.target.value)}
-          placeholder="e.g. 1234567996"
-          className="w-full input-dark font-mono"
+          type="text"
+          value={standardizePo(form.po_raw) || ''}
+          readOnly
+          placeholder="—"
+          className="w-full input-dark font-mono opacity-70 cursor-not-allowed"
+          title="Extracted from invoice (read-only)"
         />
       </Field>
 
@@ -662,7 +665,7 @@ function MultiInvoiceTable({
                 <Th>Description</Th>
                 <Th>Date</Th>
                 <Th>Equipment</Th>
-                <Th>MPW WO #</Th>
+                <Th>PO</Th>
                 <Th>Total</Th>
               </tr>
             </thead>
@@ -725,12 +728,16 @@ function MultiInvoiceTable({
                     />
                   </td>
                   <td className="px-2 py-1 align-top">
-                    <input
-                      type="number"
-                      value={row.mpw_wo_number}
-                      onChange={(e) => onRowChange(i, 'mpw_wo_number', e.target.value)}
-                      className="w-full input-dark font-mono text-xs py-1"
-                    />
+                    <p
+                      className="font-mono text-xs text-text-dim py-1"
+                      title={
+                        row.po_raw
+                          ? `As printed on invoice: ${row.po_raw}`
+                          : ''
+                      }
+                    >
+                      {standardizePo(row.po_raw) || '—'}
+                    </p>
                   </td>
                   <td className="px-2 py-1 align-top">
                     <input

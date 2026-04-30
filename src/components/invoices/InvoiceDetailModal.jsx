@@ -3,6 +3,7 @@ import { FileText, Trash2, CheckCircle2, RotateCcw, Clock, Info } from 'lucide-r
 import Modal from '../ui/Modal'
 import InvoiceStatusBadge from './InvoiceStatusBadge'
 import { getHoursForEquipmentOnDate } from '../../lib/equipmentHours'
+import { standardizePo } from '../../lib/poFormat'
 
 export default function InvoiceDetailModal({
   invoice,
@@ -31,7 +32,6 @@ export default function InvoiceDetailModal({
         invoice_date: invoice.invoice_date || '',
         vendor: invoice.vendor || '',
         total_amount: invoice.total_amount ?? '',
-        mpw_wo_number: invoice.mpw_wo_number ?? '',
         equipment_id: invoice.equipment_id || '',
         description: invoice.description || '',
         notes: invoice.notes || '',
@@ -72,7 +72,6 @@ export default function InvoiceDetailModal({
       invoice_date: form.invoice_date || null,
       vendor: form.vendor.trim() || null,
       total_amount: form.total_amount === '' || form.total_amount == null ? null : Number(form.total_amount),
-      mpw_wo_number: form.mpw_wo_number === '' || form.mpw_wo_number == null ? null : Number(form.mpw_wo_number),
       equipment_id: form.equipment_id || null,
       description: form.description.trim() || null,
       notes: form.notes.trim() || null,
@@ -253,12 +252,18 @@ export default function InvoiceDetailModal({
           />
         </Field>
 
-        <Field label="MPW WO #">
+        <Field label="PO">
           <input
-            type="number"
-            value={form.mpw_wo_number}
-            onChange={(e) => update('mpw_wo_number', e.target.value)}
-            className="w-full input-dark font-mono"
+            type="text"
+            value={standardizePo(invoice.po_raw) || ''}
+            readOnly
+            placeholder="—"
+            className="w-full input-dark font-mono opacity-70 cursor-not-allowed"
+            title={
+              invoice.po_raw && invoice.po_raw !== standardizePo(invoice.po_raw)
+                ? `As printed on invoice: ${invoice.po_raw}`
+                : 'Extracted from invoice (read-only)'
+            }
           />
         </Field>
 
@@ -297,22 +302,11 @@ export default function InvoiceDetailModal({
         </Field>
       </div>
 
-      {/* PO captured by the agent — show only if present. Read-only:
-          the alias is already written when the user saved the invoice. */}
-      {invoice.po_raw && (
-        <div className="mt-5 pt-4 border-t border-border">
-          <p className="text-[11px] font-display uppercase tracking-wider text-muted mb-1">
-            PO on invoice
-          </p>
-          <p className="text-sm text-text-dim font-mono">{invoice.po_raw}</p>
-        </div>
-      )}
-
       {/* Hours-on-date lookup — interim feature while VisionLink API
           access is pending. Pulls from the equipment_hours_history
           ingested via the utilization-report importer. */}
       {form.equipment_id && form.invoice_date && (
-        <div className="mt-4 pt-4 border-t border-border">
+        <div className="mt-5 pt-4 border-t border-border">
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-1.5">
               <Clock size={13} className="text-muted" />

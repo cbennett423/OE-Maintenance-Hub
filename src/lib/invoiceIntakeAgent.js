@@ -45,6 +45,7 @@ export async function agentExtractInvoices(file) {
     invoiceNumber: inv.invoice_number || null,
     invoiceDate: inv.invoice_date || null,
     poRaw: inv.po_raw || null,
+    shortDescription: inv.short_description || null,
     totalAmount: inv.total_amount ?? null,
     lineItems: inv.line_items || [],
     pageRange: inv.page_range || null,

@@ -39,6 +39,14 @@ For each invoice in the PDF, return:
 - invoice_number — the unique invoice identifier printed on the document. If both a "raw" invoice number and a customer-facing number (PSO/WO#) are present, return the raw invoice number here.
 - invoice_date — ISO 8601 date (YYYY-MM-DD)
 - po_raw — the PO / customer reference exactly as printed. Do not normalize. This is the field the customer (the maintenance shop) wrote on the order — usually their internal unit/equipment number, but format varies (e.g. "225", "CAT-225D", "Unit 225").
+- short_description — a 2-5 word summary of what the invoice is FOR, written for a maintenance shop dashboard. Describe the parts only — do NOT include the PO, the unit number, the vendor, or the invoice number (those have their own columns). If there is one dominant part on the invoice, name it. If there are multiple distinct parts, summarize the most prominent or list 2 with a "+". Examples:
+    "972 teeth"               (one type of part for a 972 wheel loader bucket)
+    "hydraulic hose"          (one hose)
+    "engine oil filter + gasket"  (two distinct parts, summarized)
+    "A-service kit"           (a service bundle)
+    "track shoe bolts"
+    "swing motor seal kit"
+  Lowercase unless a proper noun. Skip articles (a, the). Aim for ≤30 characters.
 - total_amount — number, in USD. Strip currency symbols and commas.
 - line_items — array of one object per line on the invoice. Each line:
     - part_number — the vendor's part number / SKU, exactly as printed (e.g. "1R-1808"). null if the line is labor or has no part number.

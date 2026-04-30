@@ -6,6 +6,7 @@ import UploadInvoiceModal from '../components/invoices/UploadInvoiceModal'
 import InvoiceDetailModal from '../components/invoices/InvoiceDetailModal'
 import { useInvoices } from '../hooks/useInvoices'
 import { useEquipment } from '../hooks/useEquipment'
+import { standardizePo } from '../lib/poFormat'
 
 const STATUS_OPTIONS = [
   { value: 'open', label: 'Open' },
@@ -82,7 +83,10 @@ export default function OpenInvoices() {
           inv.description,
           inv.vendor,
           inv.notes,
-          inv.mpw_wo_number,
+          // Search both the raw and standardized PO so "336F-0258" and
+          // "336F0258" both find the same row.
+          inv.po_raw,
+          standardizePo(inv.po_raw),
           eq?.label,
         ]
           .filter(Boolean)
@@ -131,7 +135,7 @@ export default function OpenInvoices() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search invoice #, description, MPW WO #, vendor, notes…"
+            placeholder="Search invoice #, description, PO, vendor, notes…"
             className="w-full pl-9 pr-3 py-2 bg-black-card border border-border rounded text-sm text-text placeholder:text-muted/60 focus:outline-none focus:border-cat-yellow"
           />
         </div>
@@ -189,7 +193,7 @@ export default function OpenInvoices() {
                   <Th>Description</Th>
                   <Th>Date</Th>
                   <Th>Equipment</Th>
-                  <Th>MPW WO #</Th>
+                  <Th>PO</Th>
                   <Th className="text-right">Total</Th>
                   <Th>Status</Th>
                   <Th className="text-center">PDF</Th>
@@ -217,8 +221,11 @@ export default function OpenInvoices() {
                         {inv.invoice_date || '—'}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted">{eq?.label || '—'}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-muted">
-                        {inv.mpw_wo_number ?? '—'}
+                      <td
+                        className="px-4 py-2.5 font-mono text-xs text-muted"
+                        title={inv.po_raw && inv.po_raw !== standardizePo(inv.po_raw) ? `As printed: ${inv.po_raw}` : ''}
+                      >
+                        {standardizePo(inv.po_raw) || '—'}
                       </td>
                       <td className="px-4 py-2.5 text-text-dim font-mono text-right text-xs">
                         {inv.total_amount != null ? `$${Number(inv.total_amount).toFixed(2)}` : '—'}
