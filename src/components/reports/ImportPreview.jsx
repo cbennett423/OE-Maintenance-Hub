@@ -14,41 +14,93 @@ export default function ImportPreview({ matches, type, parseMeta, onApply, onCan
   const hoursChangedCount = changed.filter((m) => m.hoursChanged).length
   const siteChangedCount = changed.filter((m) => m.siteChanged).length
 
-  // Checkboxes: all changed items start checked
-  const [selected, setSelected] = useState(() => {
-    const set = new Set()
-    changed.forEach((_, i) => set.add(i))
-    return set
-  })
-
   const isEquipment = type === 'visionlink'
   const oldLabel = isEquipment ? 'Current Hours' : 'Current Odo'
   const newLabel = isEquipment ? 'New Hours' : 'New Odo'
   const unitField = isEquipment ? 'equipment' : 'truck'
 
-  const selectedCount = selected.size
-
-  function toggleOne(idx) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
-      return next
+  // Per-field selection: { [idx]: { hours: bool, site: bool } }
+  // Each applicable change starts checked. Samsara only uses `hours`
+  // (the odometer field); VisionLink uses both.
+  const [selected, setSelected] = useState(() => {
+    const map = {}
+    changed.forEach((m, i) => {
+      map[i] = {
+        hours: isEquipment ? !!m.hoursChanged : true,
+        site: isEquipment && !!m.siteChanged,
+      }
     })
+    return map
+  })
+
+  function rowHoursApplicable(m) {
+    return isEquipment ? !!m.hoursChanged : true
+  }
+  function rowSiteApplicable(m) {
+    return isEquipment && !!m.siteChanged
+  }
+  function rowHasAnySelected(idx) {
+    const m = changed[idx]
+    const sel = selected[idx] || {}
+    return (rowHoursApplicable(m) && sel.hours) || (rowSiteApplicable(m) && sel.site)
+  }
+  function rowHasAllSelected(idx) {
+    const m = changed[idx]
+    const sel = selected[idx] || {}
+    return (
+      (!rowHoursApplicable(m) || sel.hours) &&
+      (!rowSiteApplicable(m) || sel.site)
+    )
+  }
+
+  const hoursAppliedCount = changed.filter(
+    (m, i) => rowHoursApplicable(m) && selected[i]?.hours
+  ).length
+  const siteAppliedCount = changed.filter(
+    (m, i) => rowSiteApplicable(m) && selected[i]?.site
+  ).length
+  const selectedCount = changed.filter((_, i) => rowHasAnySelected(i)).length
+  const allRowsAllSelected = changed.every((_, i) => rowHasAllSelected(i))
+
+  function toggleRow(idx) {
+    const m = changed[idx]
+    const anySelected = rowHasAnySelected(idx)
+    setSelected((prev) => ({
+      ...prev,
+      [idx]: anySelected
+        ? { hours: false, site: false }
+        : {
+            hours: rowHoursApplicable(m),
+            site: rowSiteApplicable(m),
+          },
+    }))
+  }
+
+  function toggleField(idx, field) {
+    setSelected((prev) => ({
+      ...prev,
+      [idx]: { ...(prev[idx] || {}), [field]: !prev[idx]?.[field] },
+    }))
   }
 
   function toggleAll() {
-    if (selectedCount === changed.length) {
-      setSelected(new Set())
-    } else {
-      const set = new Set()
-      changed.forEach((_, i) => set.add(i))
-      setSelected(set)
-    }
+    const next = {}
+    changed.forEach((m, i) => {
+      next[i] = allRowsAllSelected
+        ? { hours: false, site: false }
+        : { hours: rowHoursApplicable(m), site: rowSiteApplicable(m) }
+    })
+    setSelected(next)
   }
 
   async function handleApply() {
-    const toApply = changed.filter((_, i) => selected.has(i))
+    const toApply = changed
+      .map((m, i) => ({
+        ...m,
+        applyHours: rowHoursApplicable(m) && !!selected[i]?.hours,
+        applySite: rowSiteApplicable(m) && !!selected[i]?.site,
+      }))
+      .filter((m) => m.applyHours || m.applySite)
     if (toApply.length === 0) return
     setApplying(true)
     try {
@@ -102,11 +154,15 @@ export default function ImportPreview({ matches, type, parseMeta, onApply, onCan
             {selectedCount} of {changed.length} selected
           </span>
           <span className="text-muted">
-            {hoursChangedCount} hour {hoursChangedCount === 1 ? 'change' : 'changes'}
+            {isEquipment
+              ? `${hoursAppliedCount}/${hoursChangedCount} hour ${hoursChangedCount === 1 ? 'change' : 'changes'}`
+              : `${hoursChangedCount} ${hoursChangedCount === 1 ? 'change' : 'changes'}`}
           </span>
-          <span className="text-muted">
-            {siteChangedCount} site {siteChangedCount === 1 ? 'change' : 'changes'}
-          </span>
+          {isEquipment && (
+            <span className="text-muted">
+              {siteAppliedCount}/{siteChangedCount} site {siteChangedCount === 1 ? 'change' : 'changes'}
+            </span>
+          )}
           <span className="text-muted">
             {unchanged.length} unchanged
           </span>
@@ -147,7 +203,7 @@ export default function ImportPreview({ matches, type, parseMeta, onApply, onCan
                 <th className="px-4 py-2 w-10">
                   <input
                     type="checkbox"
-                    checked={selectedCount === changed.length}
+                    checked={allRowsAllSelected}
                     onChange={toggleAll}
                     className="w-4 h-4 accent-cat-yellow"
                   />
@@ -166,22 +222,26 @@ export default function ImportPreview({ matches, type, parseMeta, onApply, onCan
                 const label = isEquipment ? unit?.label : unit?.name || unit?.unit
                 const oldVal = isEquipment ? m.oldHours : m.oldOdometer
                 const newVal = isEquipment ? m.newHours : m.newOdometer
-                const hoursChanged = isEquipment ? m.hoursChanged : true
+                const hoursChanged = rowHoursApplicable(m)
+                const siteChanged = rowSiteApplicable(m)
                 const diff = newVal - (oldVal || 0)
-                const checked = selected.has(i)
+                const sel = selected[i] || { hours: false, site: false }
+                const hoursChecked = hoursChanged && sel.hours
+                const siteChecked = siteChanged && sel.site
+                const anyChecked = hoursChecked || siteChecked
                 return (
                   <tr
                     key={i}
-                    onClick={() => toggleOne(i)}
+                    onClick={() => toggleRow(i)}
                     className={`border-b border-border cursor-pointer transition-colors ${
-                      !checked ? 'opacity-40' : ''
+                      !anyChecked ? 'opacity-40' : ''
                     } ${i % 2 === 1 ? 'bg-black/30' : ''} hover:bg-cat-yellow/5`}
                   >
                     <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleOne(i)}
+                        checked={rowHasAllSelected(i)}
+                        onChange={() => toggleRow(i)}
                         className="w-4 h-4 accent-cat-yellow"
                       />
                     </td>
@@ -193,7 +253,26 @@ export default function ImportPreview({ matches, type, parseMeta, onApply, onCan
                       {hoursChanged ? <ArrowRight size={14} className="inline" /> : <span className="text-muted">·</span>}
                     </td>
                     <td className="px-4 py-2 font-mono text-text-dim text-right font-bold">
-                      {hoursChanged ? Number(newVal).toLocaleString() : <span className="text-muted">{Number(oldVal || 0).toLocaleString()}</span>}
+                      {hoursChanged ? (
+                        isEquipment ? (
+                          <label
+                            className={`inline-flex items-center justify-end gap-2 cursor-pointer ${hoursChecked ? '' : 'opacity-50'}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!sel.hours}
+                              onChange={() => toggleField(i, 'hours')}
+                              className="w-3.5 h-3.5 accent-cat-yellow"
+                            />
+                            <span>{Number(newVal).toLocaleString()}</span>
+                          </label>
+                        ) : (
+                          Number(newVal).toLocaleString()
+                        )
+                      ) : (
+                        <span className="text-muted">{Number(oldVal || 0).toLocaleString()}</span>
+                      )}
                     </td>
                     <td className="px-4 py-2 font-mono text-right text-xs">
                       {hoursChanged ? (
@@ -206,12 +285,21 @@ export default function ImportPreview({ matches, type, parseMeta, onApply, onCan
                     </td>
                     {isEquipment && (
                       <td className="px-4 py-2 text-xs">
-                        {m.siteChanged ? (
-                          <div className="flex items-center gap-1.5 text-cat-yellow">
+                        {siteChanged ? (
+                          <label
+                            className={`inline-flex items-center gap-2 cursor-pointer ${siteChecked ? 'text-cat-yellow' : 'text-cat-yellow/60'}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!sel.site}
+                              onChange={() => toggleField(i, 'site')}
+                              className="w-3.5 h-3.5 accent-cat-yellow"
+                            />
                             <span className="text-muted">{m.oldSite || '—'}</span>
                             <ArrowRight size={11} />
                             <span className="font-bold">{m.newSite}</span>
-                          </div>
+                          </label>
                         ) : (
                           <span className="text-muted">{m.oldSite || '—'}</span>
                         )}

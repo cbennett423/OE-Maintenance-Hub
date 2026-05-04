@@ -113,8 +113,8 @@ export default function Reports() {
     let count = 0
     for (const m of changed) {
       const patch = {}
-      if (m.hoursChanged) patch.hours = m.newHours
-      if (m.siteChanged) patch.site = m.newSite
+      if (m.applyHours) patch.hours = m.newHours
+      if (m.applySite) patch.site = m.newSite
       if (Object.keys(patch).length === 0) continue
       const result = await updateUnit(m.equipment.id, patch, m.equipment)
       if (!result.error) count++
