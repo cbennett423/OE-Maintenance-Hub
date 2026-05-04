@@ -48,8 +48,9 @@ export function nextIntervalMark(hours) {
  * Compute the full service status for a unit.
  *
  * Priority order:
- *   1. svc_override (manual label like "CHECK SERVICE", "Oil change") → status "override"
- *   2. svc_overdue boolean flag → status "forceOverdue"
+ *   1. svc_overdue boolean flag → status "forceOverdue" (wins over any override
+ *      text so a user can force-overdue a unit that was previously marked done)
+ *   2. svc_override (manual label like "CHECK SERVICE", "Oil change") → status "override"
  *   3. If we've crossed an interval (hoursToNext <= 0) → status "overdue"
  *   4. Within WARNING_THRESHOLD of next interval:
  *        - kit_ordered true → status "kit"
@@ -70,7 +71,19 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
   const hoursToNext = nextMark - hours
   const label = intervalLabelFor(nextMark)
 
-  // 1. Manual text override
+  // 1. Force-overdue flag — top priority so the user can force-overdue a unit
+  // that was previously marked done (override text would otherwise mask it)
+  if (unit.svc_overdue === true) {
+    return {
+      status: 'forceOverdue',
+      intervalLabel: label,
+      hoursToNext,
+      primary: label,
+      secondary: 'OVERDUE',
+    }
+  }
+
+  // 2. Manual text override
   if (unit.svc_override && String(unit.svc_override).trim() !== '') {
     const text = String(unit.svc_override).trim()
     const doneMatch = text.match(/^(\d+)HR\s+Done\b/i)
@@ -146,17 +159,6 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
       hoursToNext: null,
       primary: text,
       secondary: '',
-    }
-  }
-
-  // 2. Force-overdue flag
-  if (unit.svc_overdue === true) {
-    return {
-      status: 'forceOverdue',
-      intervalLabel: label,
-      hoursToNext,
-      primary: label,
-      secondary: 'OVERDUE',
     }
   }
 
