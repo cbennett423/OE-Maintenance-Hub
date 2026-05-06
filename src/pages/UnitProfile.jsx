@@ -9,6 +9,7 @@ import WOStatusBadge from '../components/workorders/WOStatusBadge'
 import PriorityBadge from '../components/workorders/PriorityBadge'
 import WODetailModal from '../components/workorders/WODetailModal'
 import { useEquipment } from '../hooks/useEquipment'
+import { useJobs } from '../hooks/useJobs'
 import { useWorkOrders } from '../hooks/useWorkOrders'
 import { useUnitAuditLog } from '../hooks/useAuditLog'
 import { forecastIntervals } from '../lib/serviceLogic'
@@ -17,6 +18,7 @@ export default function UnitProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { equipment, loading, updateUnit } = useEquipment()
+  const { jobs } = useJobs()
   const [editOpen, setEditOpen] = useState(false)
   const [createWOOpen, setCreateWOOpen] = useState(false)
   const [selectedWO, setSelectedWO] = useState(null)
@@ -29,8 +31,11 @@ export default function UnitProfile() {
   const sites = useMemo(() => {
     const set = new Set()
     equipment.forEach((u) => u.site && set.add(u.site))
+    jobs.forEach((j) => {
+      if (j.active !== false && j.name) set.add(j.name)
+    })
     return Array.from(set).sort()
-  }, [equipment])
+  }, [equipment, jobs])
 
   const { workOrders, createWO, updateWO } = useWorkOrders({
     equipmentId: id,
