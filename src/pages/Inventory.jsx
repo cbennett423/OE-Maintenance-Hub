@@ -1,16 +1,31 @@
 import { useMemo, useState } from 'react'
-import { Plus, Search, AlertTriangle } from 'lucide-react'
+import { Plus, Search, AlertTriangle, Settings } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import PartModal from '../components/inventory/PartModal'
-import { useInventory, CATEGORIES } from '../hooks/useInventory'
+import ManageInventoriesModal from '../components/inventory/ManageInventoriesModal'
+import { useInventory } from '../hooks/useInventory'
+import { useInventories } from '../hooks/useInventories'
 
 export default function Inventory() {
   const { parts, loading, error, addPart, updatePart } = useInventory()
+  const {
+    inventories,
+    addInventory,
+    renameInventory,
+    deleteInventory,
+  } = useInventories()
   const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [inventoryFilter, setInventoryFilter] = useState('all')
   const [stockFilter, setStockFilter] = useState('all')
   const [addOpen, setAddOpen] = useState(false)
   const [editingPart, setEditingPart] = useState(null)
+  const [manageOpen, setManageOpen] = useState(false)
+
+  const inventoryNameById = useMemo(() => {
+    const map = new Map()
+    for (const inv of inventories) map.set(inv.id, inv.name)
+    return map
+  }, [inventories])
 
   const lowStockCount = useMemo(
     () => parts.filter((p) => p.quantity_on_hand <= p.quantity_min).length,
@@ -20,7 +35,13 @@ export default function Inventory() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return parts.filter((p) => {
-      if (categoryFilter !== 'all' && p.category !== categoryFilter) return false
+      if (inventoryFilter === 'uncategorized' && p.inventory_id) return false
+      if (
+        inventoryFilter !== 'all' &&
+        inventoryFilter !== 'uncategorized' &&
+        p.inventory_id !== inventoryFilter
+      )
+        return false
       if (stockFilter === 'low' && p.quantity_on_hand > p.quantity_min) return false
       if (stockFilter === 'ok' && p.quantity_on_hand <= p.quantity_min) return false
       if (q) {
@@ -32,7 +53,7 @@ export default function Inventory() {
       }
       return true
     })
-  }, [parts, search, categoryFilter, stockFilter])
+  }, [parts, search, inventoryFilter, stockFilter])
 
   return (
     <div>
@@ -80,15 +101,22 @@ export default function Inventory() {
           />
         </div>
         <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="input-dark min-w-[160px]"
+          value={inventoryFilter}
+          onChange={(e) => setInventoryFilter(e.target.value)}
+          className="input-dark min-w-[180px]"
         >
-          <option value="all">All Categories</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+          <option value="all">All Inventories</option>
+          <option value="uncategorized">Uncategorized</option>
+          {inventories.map((inv) => (
+            <option key={inv.id} value={inv.id}>{inv.name}</option>
           ))}
         </select>
+        <button
+          onClick={() => setManageOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-display font-semibold uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors"
+        >
+          <Settings size={13} /> Manage
+        </button>
         <select
           value={stockFilter}
           onChange={(e) => setStockFilter(e.target.value)}
@@ -125,7 +153,7 @@ export default function Inventory() {
                 <tr className="text-left border-b-2 border-b-cat-yellow bg-black-soft">
                   <Th>Description</Th>
                   <Th>Part #</Th>
-                  <Th>Category</Th>
+                  <Th>Inventory</Th>
                   <Th className="text-right">Qty</Th>
                   <Th className="text-right">Min</Th>
                   <Th className="text-right">Cost</Th>
@@ -151,7 +179,9 @@ export default function Inventory() {
                         </div>
                       </td>
                       <td className="px-4 py-2.5 font-mono text-xs text-muted">{p.part_number || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted">{p.category}</td>
+                      <td className="px-4 py-2.5 text-xs text-muted">
+                        {inventoryNameById.get(p.inventory_id) || '—'}
+                      </td>
                       <td className={`px-4 py-2.5 font-mono text-right ${isLow ? 'text-svc-red font-bold' : 'text-text-dim'}`}>
                         {p.quantity_on_hand}
                       </td>
@@ -176,6 +206,7 @@ export default function Inventory() {
         isOpen={addOpen}
         onClose={() => setAddOpen(false)}
         onSave={addPart}
+        inventories={inventories}
       />
       {/* Edit modal */}
       <PartModal
@@ -183,6 +214,17 @@ export default function Inventory() {
         isOpen={!!editingPart}
         onClose={() => setEditingPart(null)}
         onSave={updatePart}
+        inventories={inventories}
+      />
+      {/* Manage inventories modal */}
+      <ManageInventoriesModal
+        isOpen={manageOpen}
+        onClose={() => setManageOpen(false)}
+        inventories={inventories}
+        parts={parts}
+        onAdd={addInventory}
+        onRename={renameInventory}
+        onDelete={deleteInventory}
       />
     </div>
   )

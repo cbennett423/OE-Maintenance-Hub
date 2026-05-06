@@ -3,18 +3,6 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { writeAuditLog, diffForAuditLog, writeAuditLogBatch } from '../lib/auditLog'
 
-const CATEGORIES = [
-  'Filters',
-  'Fluids',
-  'Belts & Hoses',
-  'Electrical',
-  'Undercarriage',
-  'Attachments',
-  'Shop Supplies',
-]
-
-export { CATEGORIES }
-
 export function useInventory() {
   const { user } = useAuth()
   const [parts, setParts] = useState([])
@@ -27,7 +15,6 @@ export function useInventory() {
     const { data, error } = await supabase
       .from('parts_inventory')
       .select('*')
-      .order('category', { ascending: true })
       .order('description', { ascending: true })
 
     if (error) {
@@ -48,7 +35,7 @@ export function useInventory() {
       const row = {
         part_number: data.part_number || null,
         description: data.description,
-        category: data.category || 'Shop Supplies',
+        inventory_id: data.inventory_id || null,
         quantity_on_hand: data.quantity_on_hand != null ? Number(data.quantity_on_hand) : 0,
         quantity_min: data.quantity_min != null ? Number(data.quantity_min) : 0,
         unit_cost: data.unit_cost != null && data.unit_cost !== '' ? Number(data.unit_cost) : null,

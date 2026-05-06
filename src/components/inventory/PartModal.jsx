@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
-import { CATEGORIES } from '../../hooks/useInventory'
 
 const VENDORS = ['CAT', 'Napa', 'Grainger', 'OReilly', 'Local Supplier']
 
@@ -8,7 +7,7 @@ const VENDORS = ['CAT', 'Napa', 'Grainger', 'OReilly', 'Local Supplier']
  * Shared modal for adding and editing parts.
  * When `part` is null, operates in "Add" mode.
  */
-export default function PartModal({ part, isOpen, onClose, onSave }) {
+export default function PartModal({ part, isOpen, onClose, onSave, inventories = [] }) {
   const isNew = !part
   const [form, setForm] = useState(() => getDefaults(part))
   const [saving, setSaving] = useState(false)
@@ -18,7 +17,7 @@ export default function PartModal({ part, isOpen, onClose, onSave }) {
     return {
       part_number: p?.part_number ?? '',
       description: p?.description ?? '',
-      category: p?.category ?? 'Shop Supplies',
+      inventory_id: p?.inventory_id ?? '',
       quantity_on_hand: p?.quantity_on_hand ?? 0,
       quantity_min: p?.quantity_min ?? 0,
       unit_cost: p?.unit_cost ?? '',
@@ -49,6 +48,7 @@ export default function PartModal({ part, isOpen, onClose, onSave }) {
 
     const data = {
       ...form,
+      inventory_id: form.inventory_id || null,
       quantity_on_hand: Number(form.quantity_on_hand) || 0,
       quantity_min: Number(form.quantity_min) || 0,
       unit_cost: form.unit_cost === '' ? null : Number(form.unit_cost),
@@ -111,14 +111,15 @@ export default function PartModal({ part, isOpen, onClose, onSave }) {
             className="w-full input-dark font-mono"
           />
         </Field>
-        <Field label="Category">
+        <Field label="Inventory">
           <select
-            value={form.category}
-            onChange={(e) => update('category', e.target.value)}
+            value={form.inventory_id || ''}
+            onChange={(e) => update('inventory_id', e.target.value)}
             className="w-full input-dark"
           >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
+            <option value="">— Uncategorized —</option>
+            {inventories.map((inv) => (
+              <option key={inv.id} value={inv.id}>{inv.name}</option>
             ))}
           </select>
         </Field>
