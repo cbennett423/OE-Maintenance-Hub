@@ -5,6 +5,7 @@ import PageHeader from '../components/layout/PageHeader'
 import EquipmentTable from '../components/equipment/EquipmentTable'
 import EditUnitModal from '../components/equipment/EditUnitModal'
 import { useEquipment } from '../hooks/useEquipment'
+import { useJobs } from '../hooks/useJobs'
 import { computeServiceStatus } from '../lib/serviceLogic'
 
 const STATUS_FILTERS = [
@@ -43,16 +44,25 @@ function siteRank(site) {
 export default function Equipment() {
   const navigate = useNavigate()
   const { equipment, loading, error, updateUnit } = useEquipment()
+  const { jobs } = useJobs()
   const [search, setSearch] = useState('')
   const [siteFilter, setSiteFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [editingUnit, setEditingUnit] = useState(null)
 
+  // Merge job names from the jobs table with sites already set on
+  // equipment rows. Without the jobs table, newly-created jobs in
+  // Settings can't be picked in the equipment edit modal until something
+  // is already assigned to them. Inactive jobs are excluded from new
+  // additions, but any site already in use on equipment stays visible.
   const sites = useMemo(() => {
     const set = new Set()
     equipment.forEach((u) => u.site && set.add(u.site))
+    jobs.forEach((j) => {
+      if (j.active !== false && j.name) set.add(j.name)
+    })
     return Array.from(set).sort()
-  }, [equipment])
+  }, [equipment, jobs])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
