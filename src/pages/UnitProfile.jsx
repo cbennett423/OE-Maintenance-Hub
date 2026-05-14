@@ -150,6 +150,17 @@ export default function UnitProfile() {
         </div>
       </div>
 
+      {/* Fire Extinguisher */}
+      <SectionHeader title="Fire Extinguisher" />
+      <div className="bg-black-card border border-border rounded-lg p-4 mb-6">
+        <FireExtinguisherToggle
+          status={unit.fire_extinguisher_status || 'not_required'}
+          onChange={(value) =>
+            updateUnit(unit.id, { fire_extinguisher_status: value }, unit)
+          }
+        />
+      </div>
+
       {/* Specs + Product Link side-by-side */}
       {(unit.make || unit.model || unit.year || unit.bucket_size ||
         unit.product_link_radio || unit.product_link_radio_software || unit.product_link_ecm || unit.product_link_ecm_software) && (
@@ -452,6 +463,34 @@ function SpecRow({ label, value, mono }) {
       <p className={`text-sm text-text-dim mt-0.5 ${mono ? 'font-mono' : ''}`}>
         {value || '—'}
       </p>
+    </div>
+  )
+}
+
+function FireExtinguisherToggle({ status, onChange }) {
+  const options = [
+    { value: 'not_required', label: 'N/A', activeClasses: 'bg-muted/20 text-text border-muted/50' },
+    { value: 'pending', label: 'Pending', activeClasses: 'bg-svc-red/20 text-svc-red border-svc-red/50' },
+    { value: 'installed', label: '✓ Installed', activeClasses: 'bg-svc-green/20 text-svc-green border-svc-green/50' },
+  ]
+  return (
+    <div className="inline-flex flex-wrap gap-2">
+      {options.map((opt) => {
+        const selected = status === opt.value
+        return (
+          <button
+            key={opt.value}
+            onClick={() => !selected && onChange(opt.value)}
+            className={`px-3 py-1.5 rounded font-display text-xs font-semibold uppercase tracking-wider border transition-colors ${
+              selected
+                ? opt.activeClasses
+                : 'bg-transparent text-muted border-border hover:text-text hover:border-muted'
+            }`}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

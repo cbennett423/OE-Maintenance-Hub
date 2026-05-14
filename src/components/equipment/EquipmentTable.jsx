@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import ServiceBadge from './ServiceBadge'
+import FireExtinguisherStatus from './FireExtinguisherStatus'
 import { formatKitDate } from '../../lib/serviceLogic'
 
 export default function EquipmentTable({ equipment, onRowClick, onViewProfile }) {
@@ -22,6 +23,7 @@ export default function EquipmentTable({ equipment, onRowClick, onViewProfile })
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Site</th>
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs text-right">Hours</th>
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Service</th>
+              <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Fire Ext.</th>
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Kit Ordered</th>
               <th className="px-4 py-2.5 font-display font-semibold uppercase tracking-wider text-muted text-xs">Notes</th>
             </tr>
@@ -35,7 +37,7 @@ export default function EquipmentTable({ equipment, onRowClick, onViewProfile })
               <>
               {showDivider && (
                 <tr key={`site-${normSite}-${i}`} className="bg-black border-b border-border">
-                  <td colSpan={7} className="px-4 py-2">
+                  <td colSpan={8} className="px-4 py-2">
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-5 bg-cat-yellow rounded-sm" />
                       <span className="font-display text-xs font-bold uppercase tracking-widest text-cat-yellow">
@@ -81,6 +83,9 @@ export default function EquipmentTable({ equipment, onRowClick, onViewProfile })
                 </td>
                 <td className="px-4 py-2.5">
                   <ServiceBadge unit={unit} size="sm" />
+                </td>
+                <td className="px-4 py-2.5">
+                  <FireExtinguisherStatus status={unit.fire_extinguisher_status} size="sm" />
                 </td>
                 <td className="px-4 py-2.5 font-mono text-xs text-muted whitespace-nowrap">
                   {formatKitDate(unit.kit_ordered_date)}
