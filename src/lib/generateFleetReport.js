@@ -134,7 +134,9 @@ export async function generateFleetReport(equipment, rentals, options = {}) {
         u.hours != null ? Number(u.hours).toLocaleString() : '—',
         svcText,
         formatKitDate(u.kit_ordered_date),
-        '', // Fire ext column — checkbox drawn in didDrawCell
+        // Fire ext column: empty string for units that need a checkbox
+        // (drawn in didDrawCell), 'N/A' rendered as text for everything else.
+        u.fire_extinguisher_status === 'installed' || u.fire_extinguisher_status === 'pending' ? '' : 'N/A',
         u.notes || '',
       ]
     })
@@ -163,7 +165,16 @@ export async function generateFleetReport(equipment, rentals, options = {}) {
         1: { cellWidth: 20, halign: 'center' },
         2: { cellWidth: 26, halign: 'center', fontSize: 7 },
         3: { cellWidth: 18, halign: 'center', fontSize: 7 },
-        4: { cellWidth: 14, halign: 'center' },
+        4: {
+          cellWidth: 14,
+          halign: 'center',
+          // 'N/A' is the only text that ever renders in this column;
+          // pending/installed rows draw a checkbox in didDrawCell instead.
+          // Muted gray italic so it doesn't compete with the checkboxes.
+          fontSize: 6.5,
+          fontStyle: 'italic',
+          textColor: [150, 150, 150],
+        },
         5: { cellWidth: 'auto', fontSize: 7.5 },
       },
       alternateRowStyles: {
