@@ -162,7 +162,13 @@ export async function generateFleetReport(equipment, rentals, options = {}) {
         1: { cellWidth: 20, halign: 'center' },
         2: { cellWidth: 26, halign: 'center', fontSize: 7 },
         3: { cellWidth: 18, halign: 'center', fontSize: 7 },
-        4: { cellWidth: 'auto', fontSize: 7.5 },
+        4: {
+          cellWidth: 'auto',
+          fontSize: 7.5,
+          // Extra right padding so the fire-extinguisher checkbox drawn in
+          // didDrawCell doesn't overlap the notes text.
+          cellPadding: { top: 2, bottom: 2, left: 2, right: 7 },
+        },
       },
       alternateRowStyles: {
         fillColor: ROW_GRAY,
@@ -175,6 +181,29 @@ export async function generateFleetReport(equipment, rentals, options = {}) {
         }
       },
       didDrawCell: function (data) {
+        // Fire-extinguisher checkbox on the right side of the Notes cell.
+        // Empty box = required but not installed; checked = installed; no
+        // box at all for units that don't need one (skids, trucks, etc.).
+        if (data.section === 'body' && data.column.index === 4) {
+          const unit = units[data.row.index]
+          const status = unit?.fire_extinguisher_status
+          if (status === 'installed' || status === 'pending') {
+            const boxSize = 3
+            const boxX = data.cell.x + data.cell.width - boxSize - 2
+            const boxY = data.cell.y + (data.cell.height - boxSize) / 2
+            doc.setDrawColor(...DARK_GRAY)
+            doc.setLineWidth(0.3)
+            doc.rect(boxX, boxY, boxSize, boxSize, 'S')
+            if (status === 'installed') {
+              doc.setDrawColor(...GREEN)
+              doc.setLineWidth(0.5)
+              doc.line(boxX + 0.5, boxY + boxSize * 0.55, boxX + boxSize * 0.42, boxY + boxSize - 0.5)
+              doc.line(boxX + boxSize * 0.42, boxY + boxSize - 0.5, boxX + boxSize - 0.3, boxY + 0.4)
+            }
+            doc.setDrawColor(0, 0, 0)
+            doc.setLineWidth(0.2)
+          }
+        }
         if (data.section === 'body' && data.column.index === 2 && data.cell.raw) {
           const raw = String(data.cell.raw)
           if (!raw.trim()) return
