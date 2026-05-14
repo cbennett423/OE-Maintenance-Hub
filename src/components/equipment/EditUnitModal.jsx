@@ -29,6 +29,7 @@ const EDITABLE_FIELDS = [
   'product_link_ecm',
   'product_link_ecm_software',
   'wear_parts',
+  'fire_extinguisher_status',
 ]
 
 function pickEditable(unit) {
@@ -37,6 +38,8 @@ function pickEditable(unit) {
   for (const f of EDITABLE_FIELDS) {
     if (f === 'documents' || f === 'wear_parts' || f === 'custom_fields') {
       out[f] = Array.isArray(unit[f]) ? unit[f] : []
+    } else if (f === 'fire_extinguisher_status') {
+      out[f] = unit[f] || 'not_required'
     } else {
       out[f] = unit[f] ?? (typeof unit[f] === 'boolean' ? false : '')
     }
@@ -117,6 +120,7 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
       product_link_ecm: form.product_link_ecm || null,
       product_link_ecm_software: form.product_link_ecm_software || null,
       wear_parts: Array.isArray(form.wear_parts) ? form.wear_parts : [],
+      fire_extinguisher_status: form.fire_extinguisher_status || 'not_required',
     }
     const result = await onSave(unit.id, changes, unit)
     setSaving(false)
@@ -239,6 +243,14 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
               </div>
             </Field>
           </div>
+        </Section>
+
+        {/* ── Fire Extinguisher section ───────────────── */}
+        <Section title="Fire Extinguisher">
+          <FireExtinguisherField
+            value={form.fire_extinguisher_status || 'not_required'}
+            onChange={(v) => update('fire_extinguisher_status', v)}
+          />
         </Section>
 
         {/* ── Photo section ─────────────────────────── */}
@@ -418,6 +430,33 @@ function CheckboxField({ label, checked, onChange }) {
       />
       {label}
     </label>
+  )
+}
+
+function FireExtinguisherField({ value, onChange }) {
+  const options = [
+    { v: 'not_required', label: 'N/A', active: 'bg-muted/20 text-text border-muted/50' },
+    { v: 'pending', label: 'Pending', active: 'bg-svc-red/20 text-svc-red border-svc-red/50' },
+    { v: 'installed', label: '✓ Installed', active: 'bg-svc-green/20 text-svc-green border-svc-green/50' },
+  ]
+  return (
+    <div className="inline-flex flex-wrap gap-2">
+      {options.map((o) => {
+        const selected = value === o.v
+        return (
+          <button
+            key={o.v}
+            type="button"
+            onClick={() => onChange(o.v)}
+            className={`px-3 py-1.5 rounded font-display text-xs font-semibold uppercase tracking-wider border transition-colors ${
+              selected ? o.active : 'bg-transparent text-muted border-border hover:text-text hover:border-muted'
+            }`}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
