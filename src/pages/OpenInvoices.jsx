@@ -6,6 +6,7 @@ import UploadInvoiceModal from '../components/invoices/UploadInvoiceModal'
 import InvoiceDetailModal from '../components/invoices/InvoiceDetailModal'
 import { useInvoices } from '../hooks/useInvoices'
 import { useEquipment } from '../hooks/useEquipment'
+import { useAuth } from '../context/AuthContext'
 import { standardizePo } from '../lib/poFormat'
 
 const STATUS_OPTIONS = [
@@ -26,6 +27,7 @@ export default function OpenInvoices() {
     deleteInvoice,
   } = useInvoices()
   const { equipment } = useEquipment()
+  const { isAdmin } = useAuth()
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('open')
@@ -101,12 +103,14 @@ export default function OpenInvoices() {
   return (
     <div>
       <PageHeader title="Open Invoices">
-        <button
-          onClick={() => setUploadOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors"
-        >
-          <Plus size={14} /> Upload Invoice
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setUploadOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors"
+          >
+            <Plus size={14} /> Upload Invoice
+          </button>
+        )}
       </PageHeader>
 
       {/* Stat cards */}

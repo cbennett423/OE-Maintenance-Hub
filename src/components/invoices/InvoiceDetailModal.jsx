@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { FileText, Trash2, CheckCircle2, RotateCcw, Clock, Info } from 'lucide-react'
 import Modal from '../ui/Modal'
 import InvoiceStatusBadge from './InvoiceStatusBadge'
+import { useAuth } from '../../context/AuthContext'
 import { getHoursForEquipmentOnDate } from '../../lib/equipmentHours'
 import { standardizePo } from '../../lib/poFormat'
 
@@ -15,6 +16,7 @@ export default function InvoiceDetailModal({
   onDelete,
   equipment = [],
 }) {
+  const { isAdmin } = useAuth()
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -134,7 +136,7 @@ export default function InvoiceDetailModal({
       footer={
         <div className="flex items-center justify-between w-full">
           <div>
-            {onDelete && (
+            {onDelete && isAdmin && (
               <button
                 onClick={handleDelete}
                 disabled={saving || deleting}

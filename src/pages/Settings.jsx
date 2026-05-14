@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Save, Check, Plus, Pencil, Trash2, X } from 'lucide-react'
+import { Save, Check, Plus, Pencil, Trash2, X, UserPlus } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import Modal from '../components/ui/Modal'
+import InviteUserModal from '../components/settings/InviteUserModal'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { useJobs } from '../hooks/useJobs'
+import { useProfiles } from '../hooks/useProfiles'
 
 const MECHANIC_LIST = ['Tim', 'Mechanic 2', 'Mechanic 3']
 
 export default function Settings() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
 
   return (
     <div>
@@ -21,10 +23,13 @@ export default function Settings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <InfoRow label="Email" value={user?.email || '—'} />
             <InfoRow label="User ID" value={user?.id?.slice(0, 8) + '…' || '—'} mono />
-            <InfoRow label="Role" value="Admin" />
+            <InfoRow label="Role" value={profile?.role ? capitalize(profile.role) : '—'} />
             <InfoRow label="Domain" value="@oeconstruct.com" />
           </div>
         </SettingsCard>
+
+        {/* Users management */}
+        <UsersSettings />
 
         {/* Service interval configuration */}
         <ServiceSettings />
@@ -462,5 +467,115 @@ function Th({ children, className = '' }) {
     >
       {children}
     </th>
+  )
+}
+
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
+}
+
+function UsersSettings() {
+  const { user: currentUser } = useAuth()
+  const { profiles, loading, error, updateRole, inviteUser } = useProfiles()
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [roleError, setRoleError] = useState(null)
+
+  async function handleRoleChange(profile, newRole) {
+    if (profile.role === newRole) return
+    if (profile.id === currentUser?.id && newRole !== 'admin') {
+      setRoleError("You can't remove your own admin role.")
+      return
+    }
+    setRoleError(null)
+    const result = await updateRole(profile.id, newRole)
+    if (result?.error) {
+      setRoleError(result.error.message || 'Failed to update role')
+    }
+  }
+
+  return (
+    <>
+      <SettingsCard title="Users">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs text-muted">
+            Members can use the app day-to-day. Admins also manage Settings,
+            Audit Log, and invoices.
+          </p>
+          <button
+            onClick={() => setInviteOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors shrink-0 ml-4"
+          >
+            <UserPlus size={12} /> Invite User
+          </button>
+        </div>
+
+        {loading && <p className="text-muted text-sm">Loading users…</p>}
+        {error && (
+          <div className="text-svc-red text-sm bg-svc-red/10 border border-svc-red/30 rounded px-3 py-2 mb-2">
+            Failed to load users: {error.message}
+          </div>
+        )}
+        {roleError && (
+          <div className="text-svc-red text-sm bg-svc-red/10 border border-svc-red/30 rounded px-3 py-2 mb-2">
+            {roleError}
+          </div>
+        )}
+
+        {!loading && !error && (
+          <div className="overflow-x-auto border border-border rounded">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-border bg-black-soft">
+                  <Th>Email</Th>
+                  <Th>Name</Th>
+                  <Th className="w-32">Role</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {profiles.map((p, i) => (
+                  <tr
+                    key={p.id}
+                    className={`border-b border-border last:border-b-0 ${
+                      i % 2 === 1 ? 'bg-black/30' : ''
+                    }`}
+                  >
+                    <td className="px-3 py-2 text-text-dim text-xs font-mono">
+                      {p.email}
+                      {p.id === currentUser?.id && (
+                        <span className="ml-2 text-[10px] text-muted uppercase tracking-wider">(you)</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted">{p.full_name || '—'}</td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={p.role}
+                        onChange={(e) => handleRoleChange(p, e.target.value)}
+                        className="input-dark text-xs py-1"
+                      >
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+                {profiles.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-4 text-muted text-sm italic text-center">
+                      No users yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SettingsCard>
+
+      <InviteUserModal
+        isOpen={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        onInvite={inviteUser}
+      />
+    </>
   )
 }

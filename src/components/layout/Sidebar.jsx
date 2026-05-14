@@ -12,6 +12,7 @@ import {
   CalendarClock,
   Receipt,
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -22,11 +23,13 @@ const navItems = [
   { to: '/open-invoices', label: 'Open Invoices', icon: Receipt },
   { to: '/inventory', label: 'Inventory', icon: Package },
   { to: '/reports', label: 'Reports', icon: FileText },
-  { to: '/audit-log', label: 'Audit Log', icon: History },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/audit-log', label: 'Audit Log', icon: History, adminOnly: true },
+  { to: '/settings', label: 'Settings', icon: Settings, adminOnly: true },
 ]
 
 export default function Sidebar() {
+  const { isAdmin } = useAuth()
+  const visibleItems = navItems.filter((n) => !n.adminOnly || isAdmin)
   return (
     <aside className="w-[220px] min-h-screen bg-black-soft border-r border-border hidden md:flex flex-col shrink-0">
       <div className="px-5 py-4 border-b border-border">
@@ -37,7 +40,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 py-2">
-        {navItems.map(({ to, label, icon: Icon }) => (
+        {visibleItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
