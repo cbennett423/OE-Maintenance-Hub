@@ -51,7 +51,7 @@ export default function UnitProfile() {
   )
 
   const { entries: auditEntries, loading: auditLoading } = useUnitAuditLog(
-    unit?.label
+    unit?.id
   )
 
   if (loading) {

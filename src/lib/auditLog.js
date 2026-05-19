@@ -5,6 +5,7 @@ import { supabase } from './supabase'
  * Use writeAuditLogBatch when logging multiple field changes at once.
  */
 export async function writeAuditLog({
+  unitId,
   unitLabel,
   changeType,
   field,
@@ -14,6 +15,7 @@ export async function writeAuditLog({
   changedBy,
 }) {
   const entry = {
+    equipment_id: unitId || null,
     unit_label: unitLabel,
     change_type: changeType,
     field,
@@ -34,6 +36,7 @@ export async function writeAuditLog({
 export async function writeAuditLogBatch(entries) {
   if (!entries || entries.length === 0) return { error: null }
   const rows = entries.map((e) => ({
+    equipment_id: e.unitId || null,
     unit_label: e.unitLabel,
     change_type: e.changeType,
     field: e.field,
@@ -54,6 +57,7 @@ export async function writeAuditLogBatch(entries) {
  * in `changes` are considered.
  */
 export function diffForAuditLog({
+  unitId,
   unitLabel,
   changes,
   original,
@@ -66,6 +70,7 @@ export function diffForAuditLog({
     const after = changes[key]
     if (!valuesEqual(before, after)) {
       entries.push({
+        unitId,
         unitLabel,
         changeType,
         field: key,

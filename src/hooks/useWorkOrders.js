@@ -71,6 +71,7 @@ export function useWorkOrders(filters = {}) {
       if (error) return { error }
 
       await writeAuditLog({
+        unitId: data.equipment_id,
         unitLabel: data.equipment_label,
         changeType: 'work_order_created',
         field: 'work_order',
@@ -106,6 +107,7 @@ export function useWorkOrders(filters = {}) {
       if (updateError) return { error: updateError }
 
       const entries = diffForAuditLog({
+        unitId: original?.equipment_id,
         unitLabel: original?.equipment_label ?? id,
         changes: patch,
         original,

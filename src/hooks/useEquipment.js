@@ -88,6 +88,7 @@ export function useEquipment() {
 
       // Write audit log entries for every actually-changed field
       const entries = diffForAuditLog({
+        unitId: id,
         unitLabel: original?.label ?? id,
         changes: effectiveChanges,
         original,
@@ -117,6 +118,7 @@ export function useEquipment() {
       }
 
       await writeAuditLog({
+        unitId: id,
         unitLabel: data.label,
         changeType: 'equipment_create',
         field: '_created',
