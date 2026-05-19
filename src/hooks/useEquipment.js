@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { diffForAuditLog, writeAuditLogBatch } from '../lib/auditLog'
+import { diffForAuditLog, writeAuditLog, writeAuditLogBatch } from '../lib/auditLog'
 import { targetMarkFor } from '../lib/serviceLogic'
 
 /**
@@ -103,5 +103,32 @@ export function useEquipment() {
     [fetchEquipment, user?.email]
   )
 
-  return { equipment, loading, error, refetch: fetchEquipment, updateUnit }
+  const addUnit = useCallback(
+    async (unit) => {
+      const { data, error: insertError } = await supabase
+        .from('equipment')
+        .insert({ ...unit, updated_at: new Date().toISOString() })
+        .select()
+        .single()
+
+      if (insertError) {
+        return { error: insertError }
+      }
+
+      await writeAuditLog({
+        unitLabel: data.label,
+        changeType: 'equipment_create',
+        field: '_created',
+        oldValue: null,
+        newValue: JSON.stringify(unit),
+        changedBy: user?.email || 'unknown',
+      })
+
+      await fetchEquipment()
+      return { error: null, data }
+    },
+    [fetchEquipment, user?.email]
+  )
+
+  return { equipment, loading, error, refetch: fetchEquipment, updateUnit, addUnit }
 }

@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import EquipmentTable from '../components/equipment/EquipmentTable'
 import EditUnitModal from '../components/equipment/EditUnitModal'
+import AddUnitModal from '../components/equipment/AddUnitModal'
 import { useEquipment } from '../hooks/useEquipment'
 import { useJobs } from '../hooks/useJobs'
+import { useAuth } from '../context/AuthContext'
 import { computeServiceStatus } from '../lib/serviceLogic'
 
 const STATUS_FILTERS = [
@@ -43,12 +45,14 @@ function siteRank(site) {
 
 export default function Equipment() {
   const navigate = useNavigate()
-  const { equipment, loading, error, updateUnit } = useEquipment()
+  const { isAdmin } = useAuth()
+  const { equipment, loading, error, updateUnit, addUnit } = useEquipment()
   const { jobs } = useJobs()
   const [search, setSearch] = useState('')
   const [siteFilter, setSiteFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [editingUnit, setEditingUnit] = useState(null)
+  const [addOpen, setAddOpen] = useState(false)
 
   // Merge job names from the jobs table with sites already set on
   // equipment rows. Without the jobs table, newly-created jobs in
@@ -112,6 +116,14 @@ export default function Equipment() {
         <span className="text-sm text-muted">
           {loading ? '…' : `${filtered.length} of ${equipment.length}`}
         </span>
+        {isAdmin && (
+          <button
+            onClick={() => setAddOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-bold uppercase tracking-wider bg-cat-yellow text-black rounded hover:bg-cat-yellow-hover transition-colors"
+          >
+            <Plus size={14} /> Add Equipment
+          </button>
+        )}
       </PageHeader>
 
       {/* Filters */}
@@ -175,6 +187,13 @@ export default function Equipment() {
         isOpen={!!editingUnit}
         onClose={() => setEditingUnit(null)}
         onSave={updateUnit}
+      />
+
+      <AddUnitModal
+        sites={sites}
+        isOpen={addOpen}
+        onClose={() => setAddOpen(false)}
+        onSave={addUnit}
       />
     </div>
   )
