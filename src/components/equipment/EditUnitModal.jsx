@@ -7,6 +7,8 @@ import { supabase } from '../../lib/supabase'
 const BUCKET = 'equipment-files'
 
 const EDITABLE_FIELDS = [
+  'label',
+  'serial',
   'hours',
   'site',
   'notes',
@@ -94,7 +96,15 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
   async function handleSave() {
     setSaving(true)
     setError(null)
+    const trimmedLabel = (form.label ?? '').trim()
+    if (!trimmedLabel) {
+      setSaving(false)
+      setError('Label is required.')
+      return
+    }
     const changes = {
+      label: trimmedLabel,
+      serial: form.serial?.trim() || null,
       hours: form.hours === '' || form.hours == null ? null : Number(form.hours),
       site: form.site || null,
       notes: form.notes ?? '',
@@ -160,6 +170,24 @@ export default function EditUnitModal({ unit, sites, isOpen, onClose, onSave }) 
         {/* ── Core section ─────────────────────────────── */}
         <Section title="Core">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Label" hint="Renaming does not update historical work orders or audit log entries.">
+              <input
+                type="text"
+                value={form.label ?? ''}
+                onChange={(e) => update('label', e.target.value)}
+                className="w-full input-dark"
+              />
+            </Field>
+
+            <Field label="Serial">
+              <input
+                type="text"
+                value={form.serial ?? ''}
+                onChange={(e) => update('serial', e.target.value)}
+                className="w-full input-dark font-mono"
+              />
+            </Field>
+
             <Field label="Hours">
               <input
                 type="number"
