@@ -105,9 +105,10 @@ export function useEquipment() {
 
   const addUnit = useCallback(
     async (unit) => {
+      const id = crypto.randomUUID()
       const { data, error: insertError } = await supabase
         .from('equipment')
-        .insert({ ...unit, updated_at: new Date().toISOString() })
+        .insert({ id, ...unit, updated_at: new Date().toISOString() })
         .select()
         .single()
 
