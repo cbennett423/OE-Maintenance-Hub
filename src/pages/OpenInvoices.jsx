@@ -197,7 +197,7 @@ export default function OpenInvoices() {
                   <Th>Description</Th>
                   <Th>Date</Th>
                   <Th>Equipment</Th>
-                  <Th className="text-right">Hours</Th>
+                  <Th className="text-right">Hours at Invoice</Th>
                   <Th>PO</Th>
                   <Th className="text-right">Total</Th>
                   <Th>Status</Th>
