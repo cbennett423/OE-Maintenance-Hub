@@ -35,8 +35,14 @@ function emptyForm() {
   }
 }
 
-function emptyRow(seed = {}) {
+// A row in the multi-invoice review table. Each row carries the source
+// file it came from (source_pdf_*) so that, when uploading several PDFs at
+// once, the save can fall back to the correct original file if the
+// per-invoice split failed. `id` is a stable key so concurrent file
+// processing can target the right row without relying on array indices.
+function emptyRow(seed = {}, source = {}) {
   return {
+    id: crypto.randomUUID(),
     selected: true,
     invoice_number: seed.invoiceNumber || '',
     invoice_date: seed.invoiceDate || '',
@@ -49,8 +55,11 @@ function emptyRow(seed = {}) {
     po_raw: seed.poRaw || null,
     line_items: seed.lineItems || [],
     page_range: seed.pageRange || null,
-    pdf_url: null,
+    pdf_url: null, // per-invoice split PDF
     pdf_path: null,
+    source_name: source.name || '', // original file this invoice came from
+    source_pdf_url: source.url || null,
+    source_pdf_path: source.path || null,
     match: null,
   }
 }
@@ -62,7 +71,8 @@ export default function UploadInvoiceModal({
   equipment = [],
 }) {
   const [invoiceId, setInvoiceId] = useState(() => crypto.randomUUID())
-  const [pdf, setPdf] = useState(null)
+  // Every uploaded original PDF in this session: { id, name, url, path, size }.
+  const [pdfs, setPdfs] = useState([])
   const [uploading, setUploading] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [matching, setMatching] = useState(false)
@@ -74,27 +84,25 @@ export default function UploadInvoiceModal({
   const [form, setForm] = useState(emptyForm())
   const [rows, setRows] = useState([])
 
-  // Refs that don't need to drive re-renders. sourceFileRef holds the
-  // user-picked File while we run the agent + splitter; uploadedPathsRef
-  // tracks every storage object we've created in this session so we can
-  // clean them all up on cancel/replace.
-  const sourceFileRef = useRef(null)
+  // Tracks every storage object we've created this session (originals +
+  // per-invoice splits) so we can clean them all up on cancel.
   const uploadedPathsRef = useRef([])
 
   useEffect(() => {
     if (isOpen) {
       setInvoiceId(crypto.randomUUID())
-      setPdf(null)
+      setPdfs([])
       setForm(emptyForm())
       setRows([])
       setVendor('Caterpillar')
       setError(null)
-      sourceFileRef.current = null
       uploadedPathsRef.current = []
     }
   }, [isOpen])
 
-  const isMultiMode = rows.length > 1
+  // Once any invoice lands in the table, we're in multi mode. A lone PDF
+  // that yields a single invoice stays in the single-invoice form.
+  const isMultiMode = rows.length > 0
 
   function updateForm(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -104,16 +112,39 @@ export default function UploadInvoiceModal({
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)))
   }
 
-  async function handleUpload(file) {
-    if (!file) return
+  // Entry point for the file picker. Accepts one or many PDFs. When more
+  // than one file is involved (this batch, or files already present), every
+  // extracted invoice flows into the review table.
+  async function handleUpload(fileList) {
+    const files = Array.from(fileList || []).filter(Boolean)
+    if (files.length === 0) return
+    setError(null)
+
+    const goingMulti = files.length > 1 || pdfs.length > 0 || rows.length > 0
     setUploading(true)
     setParsing(true)
-    setError(null)
-    sourceFileRef.current = file
-    const safeName = file.name.replace(/[^\w.\-]/g, '_')
-    const path = `invoices/${invoiceId}/${Date.now()}_${safeName}`
+    // If a single-invoice form was already filled and we're now adding more
+    // files, fold that form into the table before appending the new ones.
+    if (goingMulti) promoteFormToRow()
 
-    // Upload original and run agent concurrently — they're independent.
+    try {
+      await Promise.all(files.map((file) => processFile(file, goingMulti)))
+    } finally {
+      setUploading(false)
+      setParsing(false)
+    }
+  }
+
+  // Upload one original PDF, run the AI agent on it, and route the result
+  // to either the form (lone single invoice) or the table (everything else).
+  // Files are processed concurrently by handleUpload for speed.
+  async function processFile(file, forceRows) {
+    if (!file) return
+    const fileId = crypto.randomUUID()
+    const safeName = file.name.replace(/[^\w.\-]/g, '_')
+    const path = `invoices/${invoiceId}/${fileId}_${Date.now()}_${safeName}`
+    const source = { id: fileId, name: file.name, url: null, path }
+
     const uploadTask = (async () => {
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
@@ -121,44 +152,122 @@ export default function UploadInvoiceModal({
       if (upErr) throw upErr
       uploadedPathsRef.current.push(path)
       const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
-      setPdf({ name: file.name, url: data.publicUrl, path, size: file.size })
-    })().finally(() => setUploading(false))
-
-    // Always run the AI agent — Wagner is the dominant case and the agent
-    // is the only path that captures po_raw + line_items + explanations.
-    const parseTask = (async () => {
-      try {
-        const parsed = await agentExtractInvoices(file)
-        if (parsed.length > 0) {
-          // applyParsedInvoices fills the form/rows + kicks off po-matcher.
-          // splitAndUploadInvoices runs in parallel; each invoice gets its
-          // own single-page PDF so mechanics can attach the right one to
-          // its work order in MP Web without flipping through a batched PDF.
-          applyParsedInvoices(parsed)
-          splitAndUploadInvoices(file, parsed, safeName)
-        }
-      } catch (err) {
-        console.warn('[invoice-intake] extraction failed', err)
-        // Silent — user can still type manually.
-      }
-    })().finally(() => setParsing(false))
+      source.url = data.publicUrl
+      setPdfs((ps) => [
+        ...ps,
+        { id: fileId, name: file.name, url: data.publicUrl, path, size: file.size },
+      ])
+    })()
 
     try {
-      await uploadTask
+      const parsed = await agentExtractInvoices(file)
+      // Make sure the original is uploaded so split/fallback URLs resolve.
+      try {
+        await uploadTask
+      } catch (err) {
+        setError(err.message || 'Upload failed')
+      }
+      if (parsed.length > 0) {
+        // applyParsed fills the form/rows + kicks off po-matcher.
+        // splitAndUploadInvoices runs in parallel; each invoice gets its
+        // own single-page PDF so mechanics can attach the right one to its
+        // work order in MP Web without flipping through a batched PDF.
+        const created = applyParsed(parsed, source, forceRows)
+        splitAndUploadInvoices(file, parsed, safeName, source, created)
+      }
     } catch (err) {
-      setError(err.message || 'Upload failed')
+      console.warn('[invoice-intake] extraction failed', err)
+      // Silent on parse failure — user can still type manually. Ensure the
+      // original still uploaded.
+      try {
+        await uploadTask
+      } catch (e) {
+        setError(e.message || 'Upload failed')
+      }
     }
-    parseTask
   }
 
-  // Splits the source PDF into per-invoice PDFs based on each agent
-  // record's page_range. Each split is uploaded to storage and its URL is
-  // written back to the corresponding row (or form, in single mode). On
-  // failure the row falls back to the original PDF on save.
-  async function splitAndUploadInvoices(file, parsed, safeName) {
+  // Apply parsed invoices from one file. Returns the created rows (when in
+  // table mode) so the splitter can write split URLs back by row id, or
+  // null when the result went into the single-invoice form.
+  function applyParsed(parsed, source, forceRows) {
+    const useRows = forceRows || parsed.length >= 2
+    if (useRows) {
+      const newRows = parsed.map((p) => emptyRow(p, source))
+      setRows((rs) => [...rs, ...newRows])
+      // Seed the shared vendor from the first invoice if still at default.
+      if (parsed[0]?.vendor) {
+        setVendor((v) => (v === 'Caterpillar' ? parsed[0].vendor : v))
+      }
+      runMatchersForRows(newRows, parsed[0]?.vendor)
+      return newRows
+    }
+    const p = parsed[0]
+    setForm((f) => ({
+      ...f,
+      invoice_number: p.invoiceNumber || f.invoice_number,
+      invoice_date: p.invoiceDate || f.invoice_date,
+      vendor: p.vendor || f.vendor,
+      total_amount: p.totalAmount != null ? String(p.totalAmount) : f.total_amount,
+      // Only fill description if the user hasn't typed anything yet —
+      // never clobber user input.
+      description: f.description || p.shortDescription || '',
+      po_raw: p.poRaw || null,
+      line_items: p.lineItems || [],
+      page_range: p.pageRange || null,
+    }))
+    runMatcherForSingle(p.poRaw, p.vendor)
+    return null
+  }
+
+  // Fold a populated single-invoice form into the table (used when the user
+  // adds more files after a lone PDF was already extracted). No-op if the
+  // table already has rows or the form is empty.
+  function promoteFormToRow() {
+    if (form.vendor) setVendor((v) => (v === 'Caterpillar' ? form.vendor : v))
+    setRows((rs) => {
+      if (rs.length > 0) return rs
+      const hasContent =
+        form.invoice_number ||
+        form.po_raw ||
+        (form.line_items && form.line_items.length) ||
+        form.total_amount
+      if (!hasContent) return rs
+      const src = pdfs[0] || {}
+      return [
+        {
+          id: crypto.randomUUID(),
+          selected: true,
+          invoice_number: form.invoice_number || '',
+          invoice_date: form.invoice_date || '',
+          equipment_id: form.equipment_id || '',
+          total_amount: form.total_amount || '',
+          description: form.description || '',
+          notes: form.notes || '',
+          po_raw: form.po_raw || null,
+          line_items: form.line_items || [],
+          page_range: form.page_range || null,
+          pdf_url: form.pdf_url || null,
+          pdf_path: form.pdf_path || null,
+          source_name: src.name || '',
+          source_pdf_url: src.url || null,
+          source_pdf_path: src.path || null,
+          match: form.match || null,
+        },
+      ]
+    })
+    setForm(emptyForm())
+  }
+
+  // Splits a source PDF into per-invoice PDFs based on each agent record's
+  // page_range. Each split is uploaded and its URL written back to the
+  // matching row (by id) or the form. On failure the row falls back to the
+  // original file on save.
+  async function splitAndUploadInvoices(file, parsed, safeName, source, createdRows) {
     if (!file || !parsed || parsed.length === 0) return
-    // Single invoice that already covers the whole PDF → nothing to split.
-    if (parsed.length === 1 && parsed[0]?.pageRange) {
+    // Single invoice in single mode that already covers the whole PDF →
+    // nothing to split.
+    if (!createdRows && parsed.length === 1 && parsed[0]?.pageRange) {
       try {
         const whole = await pageRangeCoversWholePdf(file, parsed[0].pageRange)
         if (whole) return
@@ -181,7 +290,7 @@ export default function UploadInvoiceModal({
           console.warn(`[splitPdf] extract failed for invoice ${i + 1}`, err)
           continue
         }
-        const path = `invoices/${invoiceId}/p${start}-${end}_${i}_${Date.now()}_${safeName}`
+        const path = `invoices/${invoiceId}/p${start}-${end}_${source.id}_${i}_${Date.now()}_${safeName}`
         const { error: upErr } = await supabase.storage
           .from(BUCKET)
           .upload(path, blob, { upsert: false, contentType: 'application/pdf' })
@@ -191,10 +300,11 @@ export default function UploadInvoiceModal({
         }
         uploadedPathsRef.current.push(path)
         const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
-        if (parsed.length >= 2) {
+        if (createdRows) {
+          const rowId = createdRows[i]?.id
           setRows((rs) =>
-            rs.map((r, idx) =>
-              idx === i ? { ...r, pdf_url: data.publicUrl, pdf_path: path } : r
+            rs.map((r) =>
+              r.id === rowId ? { ...r, pdf_url: data.publicUrl, pdf_path: path } : r
             )
           )
         } else {
@@ -203,34 +313,6 @@ export default function UploadInvoiceModal({
       }
     } finally {
       setSplitting(false)
-    }
-  }
-
-  // Apply parsed invoices to form/rows, then run po-matcher to suggest
-  // equipment for each.
-  async function applyParsedInvoices(parsed) {
-    if (parsed.length >= 2) {
-      const newRows = parsed.map((p) => emptyRow(p))
-      setRows(newRows)
-      if (parsed[0]?.vendor) setVendor(parsed[0].vendor)
-      runMatchersForRows(newRows, parsed[0]?.vendor)
-    } else if (parsed.length === 1) {
-      const p = parsed[0]
-      setForm((f) => ({
-        ...f,
-        invoice_number: p.invoiceNumber || f.invoice_number,
-        invoice_date: p.invoiceDate || f.invoice_date,
-        vendor: p.vendor || f.vendor,
-        total_amount:
-          p.totalAmount != null ? String(p.totalAmount) : f.total_amount,
-        // Only fill description if the user hasn't typed anything yet —
-        // never clobber user input.
-        description: f.description || p.shortDescription || '',
-        po_raw: p.poRaw || null,
-        line_items: p.lineItems || [],
-        page_range: p.pageRange || null,
-      }))
-      runMatcherForSingle(p.poRaw, p.vendor)
     }
   }
 
@@ -263,14 +345,15 @@ export default function UploadInvoiceModal({
     }
   }
 
+  // Run the po-matcher for a set of seed rows, writing results back by row
+  // id (not index) so concurrent file processing stays correct.
   async function runMatchersForRows(seedRows, vendorHint) {
     setMatching(true)
     try {
       const aliases = await fetchAliasesForVendor(vendorHint)
-      // Run sequentially to keep order deterministic and to avoid spamming
-      // the Edge Function. Each match is fast (<1s for tier 1/2, ~3s for LLM).
-      for (let i = 0; i < seedRows.length; i++) {
-        const seed = seedRows[i]
+      // Sequential to keep ordering deterministic and avoid spamming the
+      // Edge Function. Each match is fast (<1s tier 1/2, ~3s for LLM).
+      for (const seed of seedRows) {
         if (!seed.po_raw) continue
         const result = await matchPo({
           po_raw: seed.po_raw,
@@ -279,8 +362,8 @@ export default function UploadInvoiceModal({
           aliases,
         })
         setRows((rs) =>
-          rs.map((r, idx) => {
-            if (idx !== i) return r
+          rs.map((r) => {
+            if (r.id !== seed.id) return r
             const autofill =
               result?.equipment_id &&
               result.confidence >= PO_MATCH_AUTO_THRESHOLD &&
@@ -301,9 +384,7 @@ export default function UploadInvoiceModal({
   // User accepts the suggested match below the auto-threshold.
   function acceptSuggestion() {
     setForm((f) =>
-      f.match?.equipment_id
-        ? { ...f, equipment_id: f.match.equipment_id }
-        : f
+      f.match?.equipment_id ? { ...f, equipment_id: f.match.equipment_id } : f
     )
   }
 
@@ -317,22 +398,37 @@ export default function UploadInvoiceModal({
     )
   }
 
-  // Remove every storage object we wrote in this session — original +
-  // any per-invoice splits — not just the original.
+  // Remove every storage object we wrote this session.
   async function cleanupAllUploads() {
     const paths = uploadedPathsRef.current
     if (paths.length > 0) {
       await supabase.storage.from(BUCKET).remove(paths).catch(() => {})
     }
     uploadedPathsRef.current = []
-    sourceFileRef.current = null
   }
 
-  async function handleRemovePdf() {
-    await cleanupAllUploads()
-    setPdf(null)
-    setRows([])
-    setForm(emptyForm())
+  // Remove a single uploaded PDF: its original, its per-invoice splits, and
+  // any table rows that came from it.
+  async function removePdf(fileId) {
+    const file = pdfs.find((x) => x.id === fileId)
+    if (!file) return
+    const fileRows = rows.filter((r) => r.source_pdf_path === file.path)
+    const extra = rows.length === 0 && form.pdf_path ? [form.pdf_path] : []
+    const paths = [
+      file.path,
+      ...fileRows.map((r) => r.pdf_path).filter(Boolean),
+      ...extra,
+    ]
+    await supabase.storage.from(BUCKET).remove(paths).catch(() => {})
+    uploadedPathsRef.current = uploadedPathsRef.current.filter(
+      (p) => !paths.includes(p)
+    )
+    setRows((rs) => rs.filter((r) => r.source_pdf_path !== file.path))
+    setPdfs((ps) => {
+      const next = ps.filter((x) => x.id !== fileId)
+      if (next.length === 0) setForm(emptyForm())
+      return next
+    })
   }
 
   async function handleCancel() {
@@ -341,10 +437,11 @@ export default function UploadInvoiceModal({
   }
 
   async function handleSaveSingle() {
-    if (!pdf) {
+    if (pdfs.length === 0) {
       setError('Please upload the invoice PDF first.')
       return
     }
+    const src = pdfs[0]
     setSaving(true)
     setError(null)
     const result = await onCreate({
@@ -357,8 +454,8 @@ export default function UploadInvoiceModal({
       description: form.description.trim() || null,
       notes: form.notes.trim() || null,
       // Prefer the agent-split single-invoice PDF; fall back to original.
-      pdf_url: form.pdf_url || pdf.url,
-      pdf_path: form.pdf_path || pdf.path,
+      pdf_url: form.pdf_url || src.url,
+      pdf_path: form.pdf_path || src.path,
       po_raw: form.po_raw || null,
       line_items: form.line_items || [],
     })
@@ -371,8 +468,8 @@ export default function UploadInvoiceModal({
   }
 
   async function handleSaveMulti() {
-    if (!pdf) {
-      setError('Please upload the invoice PDF first.')
+    if (pdfs.length === 0) {
+      setError('Please upload at least one PDF first.')
       return
     }
     const selected = rows.filter((r) => r.selected)
@@ -382,6 +479,7 @@ export default function UploadInvoiceModal({
     }
     setSaving(true)
     setError(null)
+    let savedCount = 0
     for (const row of selected) {
       const result = await onCreate({
         invoice_number: row.invoice_number.trim() || null,
@@ -390,25 +488,29 @@ export default function UploadInvoiceModal({
         total_amount: row.total_amount === '' ? null : Number(row.total_amount),
         equipment_id: row.equipment_id || null,
         description: row.description.trim() || null,
-        notes: row.notes.trim() || null,
-        // Prefer the per-invoice split PDF; fall back to the original
-        // batched PDF if splitting failed for this row.
-        pdf_url: row.pdf_url || pdf.url,
-        pdf_path: row.pdf_path || pdf.path,
+        notes: row.notes?.trim?.() || null,
+        // Prefer the per-invoice split PDF; fall back to the source file
+        // this invoice came from if splitting failed for this row.
+        pdf_url: row.pdf_url || row.source_pdf_url,
+        pdf_path: row.pdf_path || row.source_pdf_path,
         po_raw: row.po_raw || null,
         line_items: row.line_items || [],
       })
       if (result?.error) {
         setSaving(false)
-        setError(`Saved ${rows.indexOf(row)} of ${selected.length}: ${result.error.message || 'error'}`)
+        setError(
+          `Saved ${savedCount} of ${selected.length}: ${result.error.message || 'error'}`
+        )
         return
       }
+      savedCount++
     }
     setSaving(false)
     onClose?.()
   }
 
-  const saveDisabled = saving || uploading || parsing || splitting || !pdf
+  const busy = uploading || parsing
+  const saveDisabled = saving || uploading || parsing || splitting || pdfs.length === 0
   const saveHandler = isMultiMode ? handleSaveMulti : handleSaveSingle
   const saveLabel = saving
     ? 'Saving…'
@@ -420,7 +522,7 @@ export default function UploadInvoiceModal({
     <Modal
       isOpen={isOpen}
       onClose={handleCancel}
-      title={isMultiMode ? `Upload Invoice — ${rows.length} Detected` : 'Upload Invoice'}
+      title={isMultiMode ? `Upload Invoices — ${rows.length} Detected` : 'Upload Invoice'}
       size="lg"
       footer={
         <>
@@ -445,54 +547,71 @@ export default function UploadInvoiceModal({
         {/* PDF uploader */}
         <div>
           <label className="block text-xs font-display font-semibold uppercase tracking-wider text-muted mb-1">
-            Invoice PDF
+            Invoice PDFs
           </label>
-          {pdf ? (
-            <div className="flex items-center justify-between px-3 py-2 bg-black-soft border border-border rounded">
-              <a
-                href={pdf.url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 text-sm text-text-dim hover:text-cat-yellow transition-colors min-w-0 truncate"
-              >
-                <FileText size={14} className="text-muted shrink-0" />
-                <span className="truncate">{pdf.name}</span>
-                {pdf.size && (
-                  <span className="text-[11px] text-muted shrink-0">
-                    ({Math.round(pdf.size / 1024)} KB)
-                  </span>
-                )}
-              </a>
-              <button
-                type="button"
-                onClick={handleRemovePdf}
-                className="text-muted hover:text-svc-red transition-colors p-1 shrink-0"
-                title="Remove"
-              >
-                <X size={14} />
-              </button>
+
+          {pdfs.length > 0 && (
+            <div className="space-y-1.5 mb-2">
+              {pdfs.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between px-3 py-2 bg-black-soft border border-border rounded"
+                >
+                  <a
+                    href={p.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-text-dim hover:text-cat-yellow transition-colors min-w-0 truncate"
+                  >
+                    <FileText size={14} className="text-muted shrink-0" />
+                    <span className="truncate">{p.name}</span>
+                    {p.size && (
+                      <span className="text-[11px] text-muted shrink-0">
+                        ({Math.round(p.size / 1024)} KB)
+                      </span>
+                    )}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => removePdf(p.id)}
+                    disabled={busy || saving}
+                    className="text-muted hover:text-svc-red transition-colors p-1 shrink-0 disabled:opacity-40"
+                    title="Remove"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
             </div>
-          ) : (
+          )}
+
+          {!busy && (
             <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display font-semibold uppercase tracking-wider border border-border text-muted hover:text-text hover:border-muted rounded transition-colors cursor-pointer">
-              <Upload size={12} /> {uploading ? 'Uploading…' : 'Choose PDF'}
+              <Upload size={12} /> {pdfs.length > 0 ? 'Add More PDFs' : 'Choose PDFs'}
               <input
                 type="file"
                 accept="application/pdf,.pdf"
-                onChange={(e) => handleUpload(e.target.files[0])}
+                multiple
+                onChange={(e) => {
+                  handleUpload(e.target.files)
+                  // Reset so picking the same file again re-triggers onChange.
+                  e.target.value = ''
+                }}
                 className="hidden"
               />
             </label>
           )}
-          {parsing && (
+
+          {(uploading || parsing) && (
             <p className="text-[11px] text-muted mt-1 flex items-center gap-1">
               <Sparkles size={11} className="text-cat-yellow animate-pulse" />
-              Reading invoice with AI…
+              {uploading ? 'Uploading & reading invoices with AI…' : 'Reading invoices with AI…'}
             </p>
           )}
           {!parsing && splitting && (
             <p className="text-[11px] text-muted mt-1 flex items-center gap-1">
               <Scissors size={11} className="text-cat-yellow animate-pulse" />
-              Splitting PDF into per-invoice files…
+              Splitting PDFs into per-invoice files…
             </p>
           )}
           {!parsing && !splitting && matching && (
@@ -507,6 +626,7 @@ export default function UploadInvoiceModal({
         {isMultiMode ? (
           <MultiInvoiceTable
             rows={rows}
+            fileCount={pdfs.length}
             vendor={vendor}
             setVendor={setVendor}
             equipment={equipment}
@@ -631,12 +751,16 @@ function SingleInvoiceForm({ form, onChange, equipment, onAcceptSuggestion }) {
 
 function MultiInvoiceTable({
   rows,
+  fileCount,
   vendor,
   setVendor,
   equipment,
   onRowChange,
   onAcceptSuggestion,
 }) {
+  // Only worth showing which file each invoice came from once more than one
+  // PDF is in play.
+  const showSource = fileCount > 1
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -650,7 +774,8 @@ function MultiInvoiceTable({
         </Field>
         <div className="flex items-end">
           <p className="text-xs text-muted">
-            {rows.length} invoices detected. Uncheck any you don't want to import.
+            {rows.length} invoice{rows.length === 1 ? '' : 's'} detected
+            {fileCount > 1 ? ` across ${fileCount} files` : ''}. Uncheck any you don't want to import.
           </p>
         </div>
       </div>
@@ -661,6 +786,7 @@ function MultiInvoiceTable({
             <thead>
               <tr className="border-b border-border bg-black-soft/50">
                 <Th className="w-8"> </Th>
+                {showSource && <Th>File</Th>}
                 <Th>Invoice #</Th>
                 <Th>Description</Th>
                 <Th>Date</Th>
@@ -671,7 +797,7 @@ function MultiInvoiceTable({
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={i} className="border-b border-border last:border-0">
+                <tr key={row.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 align-top">
                     <input
                       type="checkbox"
@@ -680,6 +806,16 @@ function MultiInvoiceTable({
                       className="accent-cat-yellow"
                     />
                   </td>
+                  {showSource && (
+                    <td className="px-2 py-1 align-top max-w-[120px]">
+                      <span
+                        className="block truncate text-[11px] text-muted"
+                        title={row.source_name}
+                      >
+                        {row.source_name || '—'}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-2 py-1 align-top">
                     <input
                       type="text"
@@ -730,11 +866,7 @@ function MultiInvoiceTable({
                   <td className="px-2 py-1 align-top">
                     <p
                       className="font-mono text-xs text-text-dim py-1"
-                      title={
-                        row.po_raw
-                          ? `As printed on invoice: ${row.po_raw}`
-                          : ''
-                      }
+                      title={row.po_raw ? `As printed on invoice: ${row.po_raw}` : ''}
                     >
                       {standardizePo(row.po_raw) || '—'}
                     </p>
