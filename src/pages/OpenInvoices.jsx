@@ -197,6 +197,7 @@ export default function OpenInvoices() {
                   <Th>Description</Th>
                   <Th>Date</Th>
                   <Th>Equipment</Th>
+                  <Th className="text-right">Hours</Th>
                   <Th>PO</Th>
                   <Th className="text-right">Total</Th>
                   <Th>Status</Th>
@@ -225,6 +226,9 @@ export default function OpenInvoices() {
                         {inv.invoice_date || '—'}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted">{eq?.label || '—'}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-muted text-right whitespace-nowrap">
+                        {inv.equipment_hours != null ? `${Number(inv.equipment_hours).toLocaleString()} hrs` : '—'}
+                      </td>
                       <td
                         className="px-4 py-2.5 font-mono text-xs text-muted"
                         title={inv.po_raw && inv.po_raw !== standardizePo(inv.po_raw) ? `As printed: ${inv.po_raw}` : ''}
