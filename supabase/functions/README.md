@@ -40,8 +40,9 @@ const { data, error } = await supabase.functions.invoke('invoice-intake', {
 
 The shared `_shared/claudeClient.ts` initializes the Anthropic SDK from the `ANTHROPIC_API_KEY` env var and exports the model constant (`claude-opus-4-7`).
 
-## Model choice — Sonnet 4.6
+## Model choice — Haiku 4.5
 
-- Sonnet 4.6 with `effort: low` and `thinking: disabled` is the cheap-and-fast configuration. It handles clean digital invoice PDFs well.
+- Haiku 4.5 with `thinking: disabled` is the cheapest-and-fastest configuration (~3x cheaper than Sonnet 4.6 on tokens). It handles clean digital invoice PDFs well.
+- Note: the `effort` parameter is **not supported on Haiku 4.5** (it errors). The intake and matcher calls therefore omit `output_config` — `effort` only applies on Sonnet 4.6 / Opus-tier models.
 - The system prompt is cached (`cache_control: ephemeral`) so per-invoice cost is dominated by the PDF tokens, not the prompt.
-- If a particular vendor's scans are too low-quality for Sonnet to read accurately, switch [`_shared/claudeClient.ts`](./_shared/claudeClient.ts) to `claude-opus-4-7` for that workload — Opus has higher-resolution vision (up to 2576px long edge) but costs ~3-5x more.
+- If a particular vendor's scans are too low-quality for Haiku to read accurately, switch that workload up to `claude-sonnet-4-6` (re-add `output_config: { effort: 'low' }`) or `claude-opus-4-7` — Opus has higher-resolution vision (up to 2576px long edge) but costs more.

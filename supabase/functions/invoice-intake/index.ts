@@ -29,7 +29,7 @@ if (!apiKey) {
 }
 const anthropic = new Anthropic({ apiKey: apiKey ?? '' })
 
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = 'claude-haiku-4-5'
 
 const SYSTEM_PROMPT = `You extract structured invoice records from heavy-equipment parts/service invoice PDFs. The PDFs come from vendors like Caterpillar, Wagner Equipment, Komatsu, Volvo, Kenworth, and others. A single PDF may contain multiple invoices (a batched mailing) — extract every invoice in the file as a separate record.
 
@@ -89,7 +89,6 @@ Deno.serve(async (req: Request) => {
       model: MODEL,
       max_tokens: 16000,
       thinking: { type: 'disabled' },
-      output_config: { effort: 'low' },
       system: [
         {
           type: 'text',

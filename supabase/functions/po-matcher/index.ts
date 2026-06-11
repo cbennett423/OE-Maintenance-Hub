@@ -30,7 +30,7 @@ if (!apiKey) {
 }
 const anthropic = new Anthropic({ apiKey: apiKey ?? '' })
 
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = 'claude-haiku-4-5'
 
 const SYSTEM_PROMPT = `You match a raw vendor PO/customer-reference string to the correct piece of equipment in the company's fleet. The PO field is freeform text that vendors fill in based on what the customer tells them at the parts counter — so it's inconsistent: sometimes just a number ("225"), sometimes prefixed ("CAT-225D"), sometimes verbose ("Unit 225 Excavator"), sometimes a serial number, occasionally wrong.
 
@@ -145,7 +145,6 @@ Deno.serve(async (req: Request) => {
       model: MODEL,
       max_tokens: 1024,
       thinking: { type: 'disabled' },
-      output_config: { effort: 'low' },
       system: [
         {
           type: 'text',
