@@ -27,11 +27,15 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: Settings, adminOnly: true },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed = false }) {
   const { isAdmin } = useAuth()
   const visibleItems = navItems.filter((n) => !n.adminOnly || isAdmin)
   return (
-    <aside className="w-[220px] min-h-screen bg-black-soft border-r border-border hidden md:flex flex-col shrink-0">
+    <aside
+      className={`w-[220px] min-h-screen bg-black-soft border-r border-border flex-col shrink-0 ${
+        collapsed ? 'hidden' : 'hidden md:flex'
+      }`}
+    >
       <div className="px-5 py-4 border-b border-border">
         <h1 className="font-display text-base font-bold uppercase tracking-widest text-cat-yellow leading-tight">
           OE Maintenance

@@ -1,7 +1,7 @@
 import { LogOut, Menu } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
-export default function Topbar({ onMenuClick }) {
+export default function Topbar({ onMenuClick, onToggleSidebar }) {
   const { user, signOut } = useAuth()
 
   return (
@@ -11,6 +11,14 @@ export default function Topbar({ onMenuClick }) {
           onClick={onMenuClick}
           className="md:hidden text-muted hover:text-text transition-colors p-1 -ml-1"
           aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
+        <button
+          onClick={onToggleSidebar}
+          className="hidden md:inline-flex text-muted hover:text-text transition-colors p-1 -ml-1"
+          aria-label="Toggle sidebar"
+          title="Toggle sidebar"
         >
           <Menu size={20} />
         </button>
