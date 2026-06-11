@@ -55,6 +55,10 @@ export function useInvoices() {
             ? null
             : Number(data.mpw_wo_number),
         equipment_id: data.equipment_id || null,
+        equipment_hours:
+          data.equipment_hours === '' || data.equipment_hours == null
+            ? null
+            : Number(data.equipment_hours),
         status: 'open',
         description: data.description || null,
         notes: data.notes || null,

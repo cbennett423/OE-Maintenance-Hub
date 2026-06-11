@@ -35,6 +35,7 @@ export default function InvoiceDetailModal({
         vendor: invoice.vendor || '',
         total_amount: invoice.total_amount ?? '',
         equipment_id: invoice.equipment_id || '',
+        equipment_hours: invoice.equipment_hours ?? '',
         description: invoice.description || '',
         notes: invoice.notes || '',
       })
@@ -55,6 +56,15 @@ export default function InvoiceDetailModal({
         form.invoice_date
       )
       setHoursLookup(result || { not_found: true })
+      // Convenience: pre-fill the editable hours input from the lookup when
+      // the user hasn't entered a value yet. They can still override it.
+      if (result?.hours != null) {
+        setForm((f) =>
+          f.equipment_hours === '' || f.equipment_hours == null
+            ? { ...f, equipment_hours: result.hours }
+            : f
+        )
+      }
     } finally {
       setHoursLooking(false)
     }
@@ -75,6 +85,10 @@ export default function InvoiceDetailModal({
       vendor: form.vendor.trim() || null,
       total_amount: form.total_amount === '' || form.total_amount == null ? null : Number(form.total_amount),
       equipment_id: form.equipment_id || null,
+      equipment_hours:
+        form.equipment_hours === '' || form.equipment_hours == null
+          ? null
+          : Number(form.equipment_hours),
       description: form.description.trim() || null,
       notes: form.notes.trim() || null,
     }
@@ -282,6 +296,17 @@ export default function InvoiceDetailModal({
               </option>
             ))}
           </select>
+        </Field>
+
+        <Field label="Equipment Hours">
+          <input
+            type="number"
+            step="0.1"
+            value={form.equipment_hours}
+            onChange={(e) => update('equipment_hours', e.target.value)}
+            placeholder="SMU at time of invoice"
+            className="w-full input-dark font-mono"
+          />
         </Field>
 
         <Field label="Description" span={2}>
