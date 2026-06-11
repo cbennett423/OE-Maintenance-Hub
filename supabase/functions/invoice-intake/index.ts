@@ -1,7 +1,7 @@
 // invoice-intake Edge Function
 //
 // Extracts structured invoice records from a (possibly batched) vendor PDF
-// using Claude Sonnet 4.6. Replaces the Wagner-only regex parser at
+// using Claude Haiku 4.5. Replaces the Wagner-only regex parser at
 // src/lib/parseInvoicePdf.js as the universal extraction path when the
 // regex doesn't recognize the vendor's format.
 //
