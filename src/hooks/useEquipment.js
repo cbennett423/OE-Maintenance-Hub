@@ -43,8 +43,12 @@ export function useEquipment() {
       //   2. User is newly marking a service done, but hours are already
       //      at/past the interval (e.g. 1000HR done at 1014 hrs) — no tag
       //      should exist in the DB in that case.
-      // In both cases the Done override and its anchor are cleared so the
-      // display is clean and the data stays tidy.
+      // We clear the Done *text* (svc_override) so the gray "Done" badge goes
+      // away, but DELIBERATELY KEEP svc_done_at_hours. That value is the
+      // persistent "last serviced" anchor computeServiceStatus uses to decide
+      // when the next service is due/overdue — nulling it would make a later
+      // service silently vanish instead of going OVERDUE (the very bug this
+      // logic guards against).
       let effectiveChanges = changes
       const postSave = { ...original, ...changes }
       const doneMatch = String(postSave.svc_override || '').match(
@@ -66,7 +70,6 @@ export function useEquipment() {
             effectiveChanges = {
               ...changes,
               svc_override: null,
-              svc_done_at_hours: null,
             }
           }
         }

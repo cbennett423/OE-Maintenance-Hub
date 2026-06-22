@@ -162,35 +162,76 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
     }
   }
 
-  // 3. Actually overdue (hours have passed the mark)
-  if (hoursToNext <= 0) {
+  // 3–5. Hours-based service cycle.
+  //
+  // The mark the unit's open service is due at is anchored to the LAST
+  // COMPLETED service (svc_done_at_hours), NOT to the current reading. This
+  // is the crux of the fix. Previously the target was derived from current
+  // hours via nextIntervalMark(hours), so the instant a reading stepped past
+  // an interval the target rolled forward to the next one and the badge
+  // silently vanished — a due service could be skipped without ever being
+  // marked done or shown as OVERDUE. (The old `hoursToNext <= 0` overdue
+  // branch was unreachable: nextIntervalMark is always strictly above hours,
+  // so hoursToNext was never <= 0.)
+  //
+  // cycleMark = the interval mark this unit's currently-open service is due
+  // at. It does not move until a newer service is recorded, so a crossed
+  // mark persists as OVERDUE until completed.
+  //   - With a service anchor: the next 250 mark after the one that service
+  //     covered (targetMarkFor maps the anchor hours to the mark it was
+  //     "for", handling early/late completions; +250 is the next one due).
+  //   - Without an anchor (never serviced in-app): fall back to the reading.
+  //     The upcoming mark drives the due window; if a kit was ordered and we
+  //     are already past that window, the just-passed mark is overdue. Units
+  //     with no anchor and no kit stay quiet so the whole fleet doesn't light
+  //     up red at once.
+  const servicedAnchor =
+    unit.svc_done_at_hours == null || unit.svc_done_at_hours === ''
+      ? null
+      : Number(unit.svc_done_at_hours)
+
+  let cycleMark
+  if (servicedAnchor != null) {
+    cycleMark = targetMarkFor(servicedAnchor, 250) + 250
+  } else if (unit.kit_ordered === true && hoursToNext > threshold && nextMark > 250) {
+    // Kit ordered for a mark we've already rolled past — treat it as overdue.
+    cycleMark = nextMark - 250
+  } else {
+    cycleMark = nextMark
+  }
+
+  const cycleLabel = intervalLabelFor(cycleMark)
+  const hoursToCycle = cycleMark - hours
+
+  // 3. Overdue — hours have reached or passed the open service's mark.
+  if (hoursToCycle <= 0) {
     return {
       status: 'overdue',
-      intervalLabel: label,
-      hoursToNext,
-      primary: label,
+      intervalLabel: cycleLabel,
+      hoursToNext: hoursToCycle,
+      primary: cycleLabel,
       secondary: 'OVERDUE',
     }
   }
 
-  // 4. Due soon (within warning threshold)
-  if (hoursToNext <= threshold) {
+  // 4. Due soon (within warning threshold of the open mark)
+  if (hoursToCycle <= threshold) {
     if (unit.kit_ordered === true) {
       // Kit ordered: "order kit" tag goes away entirely — only the interval
       // label remains. Matches the original prototype PDF behavior.
       return {
         status: 'kit',
-        intervalLabel: label,
-        hoursToNext,
-        primary: label,
+        intervalLabel: cycleLabel,
+        hoursToNext: hoursToCycle,
+        primary: cycleLabel,
         secondary: '',
       }
     }
     return {
       status: 'due',
-      intervalLabel: label,
-      hoursToNext,
-      primary: label,
+      intervalLabel: cycleLabel,
+      hoursToNext: hoursToCycle,
+      primary: cycleLabel,
       secondary: 'order kit',
     }
   }
@@ -198,8 +239,8 @@ export function computeServiceStatus(unit, threshold = WARNING_THRESHOLD) {
   // 5. Not due
   return {
     status: 'none',
-    intervalLabel: label,
-    hoursToNext,
+    intervalLabel: cycleLabel,
+    hoursToNext: hoursToCycle,
     primary: '',
     secondary: '',
   }
